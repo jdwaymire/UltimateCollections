@@ -45,7 +45,8 @@ You write a short description of each collection, and the plugin does the rest e
 - puts the ones **you actually own** into an Emby collection, and keeps it up to date as your library grows;
 - creates **seasonal collections** only during their season (Halloween in October, Christmas in December) and removes
   them afterwards;
-- draws a **poster and a backdrop** for every collection from the artwork of its best-rated movies.
+- draws a **poster and a backdrop** for every collection from the artwork of its best-rated movies, or uses
+  **your own pictures** if you upload them.
 
 ![Collections in Emby](docs/images/collections-overview.png)
 
@@ -172,6 +173,7 @@ From then on the task runs **every day at 05:00** (change the time in Scheduled 
 | **Ignore seasons** | Dry run only. Treats every seasonal collection as if it were in season, so you can preview Christmas in July. |
 | **Download all lists again on the next run** | Ignores the saved lists once and downloads everything again. Switches itself off after that run. Normally not needed (see [How the nightly sync works](#how-the-nightly-sync-works)). |
 | **Poster style...** | Opens a popup for picking a collection's poster colours with a live preview (see [Posters and backdrops](#posters-and-backdrops)). |
+| **Custom images...** | Opens a popup for uploading your own poster or backdrop for a collection, instead of the generated one (see [Your own poster or backdrop](#your-own-poster-or-backdrop)). |
 | **Only these collections** | Comma-separated collection names, e.g. `Halloween, Dinosaurs`. The next runs touch only those. Empty = all. Useful while you build or fix one collection. |
 | **Collections** | The collection definitions, written in the config language below. |
 
@@ -475,8 +477,8 @@ You don't have to type colour numbers. On the settings page, press **Poster styl
 2. Click one of the **ready-made styles**, or choose the **accent** and **tint** with the colour pickers.
 3. Change the **title** if you like (`|` starts a new line), and tick **sepia** for an old-photo look.
 4. Watch the **preview**: it is drawn by the plugin itself, from the collection's own best-rated movies, exactly the
-   way the nightly run will draw it. A collection that is out of season is previewed with the best-rated movies in
-   your library instead.
+   way the nightly run will draw it. A collection that is out of season is previewed from its saved list; a brand-new
+   one that has never run yet uses the best-rated movies in your library instead.
 5. Press **Apply**. The popup writes the `poster_*` lines into the collections text for you. Then press **Save**.
 
 The popup warns you when the accent is too dark or the tint too light to read well. Trying colours costs no TMDb
@@ -494,7 +496,7 @@ Emby by hand, the next run puts it back.
 | `poster_accent` | `poster_accent 90,220,255` | Accent colour as `red,green,blue` (0-255): the bars above and below the title and the upper title lines. Default: picked from a palette by the collection name. |
 | `poster_tint` | `poster_tint 10,30,70` | The colour the mosaic is tinted with. Default: a dark shade of the accent. |
 | `poster_sepia` | `poster_sepia yes` | Old-photo look. Nice for old decades. |
-| `posters` | `posters no` | No generated poster or backdrop for this collection (useful if you want to set your own). |
+| `posters` | `posters no` | No generated poster or backdrop for this collection. Your own images from **Custom images** are still used. |
 
 You can also write the lines by hand. Example:
 
@@ -517,7 +519,29 @@ Tips:
 - The **Poster style** popup is the easiest way to try styles. Dry run also works: the images land in the
   plugin's `previews/` folder and nothing is uploaded.
 
-If you want your own artwork instead, set `posters no` for that collection and upload a poster in Emby as usual.
+### Your own poster or backdrop
+
+Prefer a picture of your own for a collection? On the settings page, press **Custom images...**. The popup lists
+every collection in your settings with its poster and its backdrop:
+
+![The Custom images popup](docs/images/custom-images.png)
+
+- **GENERATED**: what the plugin made and Emby shows now.
+- **PREVIEW**: the collection is not built yet (out of season, or new), so you see what the plugin will make.
+- **CUSTOM**: your own picture, used instead of the generated one.
+
+Press **Upload** under a poster or backdrop and pick a **JPEG or PNG** (up to 10 MB). Best sizes: 1000x1500 for
+posters, 1920x1080 for backdrops. Pictures of another shape are cropped to fill the frame by Emby's apps; the popup
+shows that crop, says how much is cut off, and shows the whole picture when you hover over it (or tap it).
+
+Your picture is put on the collection by the next sync (or press *Run now* on the task). **Replace** swaps it for
+another one; **Remove** brings the generated artwork back on the next sync. A seasonal collection keeps its custom
+picture every year.
+
+The pictures are kept in the plugin's `images/` folder, named after the collection: `Halloween.jpg` for the poster,
+`Halloween backdrop.png` for the backdrop. You can also copy files in there yourself. Names are matched loosely
+(capitals, spaces and punctuation don't matter), so `valentines_day.jpg` belongs to *Valentine's Day*. A file that
+isn't a usable JPEG or PNG is skipped with a warning in the log, and the collection keeps the picture it has.
 
 ---
 
@@ -528,7 +552,9 @@ Every run, for every collection:
 1. **Ownership check.** The plugin only ever changes or deletes collections **it created itself** (it remembers their
    ids). If a collection with the same name already exists and was made some other way (by hand, by Emby, by
    another plugin), it is **left alone** and the log says so. Rename one of them to let the plugin build its own.
-2. **Season.** Out of season: the plugin's collection is deleted (if it exists) and nothing else happens.
+2. **Season.** Out of season: the plugin's collection is deleted (if it exists). Its list is still kept up to date
+   (step 3), so the settings page can preview its poster and the collection appears from a ready list on the first
+   day of its season.
 3. **The list.** The online sources (TMDb, MDBList) are **downloaded only when needed**:
    - the first time,
    - when the saved copy is older than `list_refresh_days` (default 7),
@@ -593,6 +619,7 @@ The plugin keeps its files in its **data folder**, inside Emby's `plugins` folde
 | `lists/` | The saved downloads, one file per collection. Safe to delete; they are downloaded again on the next run. |
 | `state.json` | Which collections the plugin created (by Emby id). **Do not delete:** without it the plugin no longer knows which collections are its own and leaves them alone. |
 | `artwork-state.json` | What each collection's poster and backdrop were made from, so unchanged artwork is not uploaded again. |
+| `images/` | Your own posters and backdrops (see [Your own poster or backdrop](#your-own-poster-or-backdrop)). |
 | `previews/` | Posters and backdrops drawn during a dry run. |
 | `backups/` | Backups written by *Delete All Collections*. |
 
@@ -607,6 +634,7 @@ library: 3097 movies (...), 40 series, 13 collections in Emby
 [Time Travel] 68 items (+1 -0, list has 951, downloaded (weekly refresh))
 [Trekkie] 22 items (+0 -0, list has 22, library titles)
 [Thanksgiving] off season (11-01 11-30): deleting collection
+[Christmas] off season (12-01 12-31), list kept ready: 638 listed (saved list, 2.0 days old)
 ...
 ```
 

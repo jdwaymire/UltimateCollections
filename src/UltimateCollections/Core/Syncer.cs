@@ -236,6 +236,7 @@ namespace UltimateCollections.Core
             {
                 if (cid.HasValue)
                     DeleteOwned($"off season ({season})");
+                await KeepListReadyAsync(c, season, maxPagesDefault, refreshDays, o, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -306,6 +307,33 @@ namespace UltimateCollections.Core
             await ArtworkAsync(cfg, c, cid, want, lib, shows, o.DryRun, ct).ConfigureAwait(false);
         }
 
+        // Off-season collections still keep a saved list, through the same cache and weekly refresh as the rest. It
+        // lets the settings page preview their poster from their own titles, and the collection appears from a ready
+        // list on the first day of its season. Found 2026-10-12: without it, previews of Christmas & co. showed the
+        // library's best-rated movies instead.
+        // NOTE: costs a few requests a week (small keyword lists, MDBList is free). A failure here is only a warning:
+        // nothing in Emby depends on it until the season starts, and then the normal path tries again.
+        async Task KeepListReadyAsync(CollectionDefinition c, string season, int maxPagesDefault, double refreshDays, SyncOptions o,
+            CancellationToken ct)
+        {
+            if (!c.NeedsDownload)
+                return;
+            try
+            {
+                var maxPages = c.Get("max_pages") != null ? int.Parse(c.Get("max_pages")) : maxPagesDefault;
+                var (r, how) = await _cache.GetAsync(c, () => _download(c, maxPages), refreshDays, o.Refresh, ct).ConfigureAwait(false);
+                _log.Info($"[{c.Name}] off season ({season}), list kept ready: {r.Listed} listed ({how})");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                _log.Warn($"[{c.Name}] off season ({season}), list not refreshed: {e.Message}");
+            }
+        }
+
         // A failed poster or backdrop is only a warning: by this point the collection itself is already in order.
         async Task ArtworkAsync(CollectionsConfig cfg, CollectionDefinition c, long? cid, HashSet<long> want, List<LibraryItem> lib,
             List<LibraryItem> shows, bool dryRun, CancellationToken ct)
@@ -316,10 +344,9 @@ namespace UltimateCollections.Core
             // Emby ever ships a different version, loading it fails here as a warning and the collections still sync.
             try
             {
-                if (!PosterStyle.Enabled(cfg, c))
-                    return;
+                // "posters no" only stops the generated artwork; custom images are still set (see ArtworkSync).
                 var members = lib.Concat(shows).Where(i => want.Contains(i.Id));
-                await Artwork.SyncAsync(c, cid, members, dryRun, ct).ConfigureAwait(false);
+                await Artwork.SyncAsync(c, cid, members, dryRun, ct, PosterStyle.Enabled(cfg, c)).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

@@ -4,7 +4,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>UltimateCollections</RootNamespace>
     <AssemblyName>UltimateCollections</AssemblyName>
-    <Version>1.0.0</Version>
+    <Version>1.1.5</Version>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 

@@ -358,11 +358,13 @@ namespace UltimateCollections.Core
         // Whether the collection currently has a poster / backdrop in Emby.
         bool HasImage(long collectionId, bool backdrop);
 
-        Task SetImageAsync(long collectionId, bool backdrop, byte[] jpeg, CancellationToken ct);
+        // mimeType: "image/jpeg" for what we draw; a custom image may also be "image/png".
+        Task SetImageAsync(long collectionId, bool backdrop, byte[] data, string mimeType, CancellationToken ct);
     }
 
     // Makes and sets a collection's poster and backdrop when they are new or when what they are made of changed
-    // (style, the 9 best-rated members, renderer version). In dry run it writes preview files instead.
+    // (style, the 9 best-rated members, renderer version). A custom image in images/ (see CustomImages) takes the place
+    // of the generated one. In dry run it writes preview files instead.
     public class ArtworkSync
     {
         readonly IArtworkTarget _target;
@@ -371,6 +373,9 @@ namespace UltimateCollections.Core
 
         // "<collection id>" / "<collection id>:backdrop" -> key of what was set.
         public Dictionary<string, string> State { get; }
+
+        // The user's own images; null = none (tests, or no images folder wired up).
+        public CustomImages Custom { get; set; }
 
         public ArtworkSync(IArtworkTarget target, string previewDir, Dictionary<string, string> state, ISyncLog log)
         {
@@ -388,16 +393,52 @@ namespace UltimateCollections.Core
 
         // collectionId null = dry run of a collection that does not exist yet. Poster first, then backdrop; each one is
         // only drawn when its key changed or the image is gone, so an unchanged nightly run uploads nothing.
+        // generate=false (the collection has "posters no") still sets custom images: someone who uploaded one wants it
+        // used, and "posters no" is about the generated look.
         public async Task SyncAsync(CollectionDefinition c, long? collectionId, IEnumerable<LibraryItem> members, bool dryRun,
-            CancellationToken ct)
+            CancellationToken ct, bool generate = true)
         {
-            var style = PosterStyle.For(c);
-            if (style.Removed.Length > 0)
-                _log.Warn($"[{c.Name}] poster title: left out characters the font cannot draw: {style.Removed}");
+            PosterStyle style = null;
             var list = members.ToList();
             foreach (var backdrop in new[] { false, true })
             {
                 var what = backdrop ? "backdrop" : "poster";
+                var stateKey = collectionId + (backdrop ? ":backdrop" : "");
+
+                // Custom image first. A file that is there but unusable is a warning and leaves the collection's
+                // current image alone: falling back to a generated one would replace the user's picture just because
+                // the file got damaged or swapped for a WebP.
+                var custom = Custom?.Matches(c.Name, backdrop) ?? new List<string>();
+                if (custom.Count > 0)
+                {
+                    if (custom.Count > 1)
+                        _log.Warn($"[{c.Name}] {custom.Count} custom {what} files match, using {Path.GetFileName(custom[0])}: " +
+                                  string.Join(", ", custom.Select(Path.GetFileName)));
+                    CustomImageFile file;
+                    byte[] data;
+                    try
+                    {
+                        file = CustomImages.Inspect(custom[0], out data);
+                    }
+                    catch (Exception e) when (e is InvalidDataException || e is IOException || e is UnauthorizedAccessException)
+                    {
+                        _log.Warn($"[{c.Name}] custom {what} not used, {what} left as it is: {e.Message}");
+                        continue;
+                    }
+                    // Keyed on the file's content, so replacing the file (same name or not) uploads it again.
+                    await SetAsync(c, collectionId, backdrop, Hash("custom;" + what + ";" + Sha1(data)), data, file.MimeType,
+                        "custom " + what, $" ({file.FileName}, {file.Width}x{file.Height})", dryRun, ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (!generate)
+                    continue;
+                if (style == null)
+                {
+                    style = PosterStyle.For(c);
+                    if (style.Removed.Length > 0)
+                        _log.Warn($"[{c.Name}] poster title: left out characters the font cannot draw: {style.Removed}");
+                }
                 var images = BestImages(_target, list, backdrop);
                 if (images.Count == 0)
                 {
@@ -405,25 +446,45 @@ namespace UltimateCollections.Core
                     continue;
                 }
                 var key = Hash($"{PosterRenderer.Version};{what};{style.Key};{string.Join(",", images.Select(i => i.id))}");
-                var stateKey = collectionId + (backdrop ? ":backdrop" : "");
-                // Unchanged and still there: nothing to do. A missing image (e.g. removed by hand) is made again.
-                if (!dryRun && collectionId.HasValue && State.TryGetValue(stateKey, out var old) && old == key
-                    && _target.HasImage(collectionId.Value, backdrop))
+                // Unchanged and still there: skip before drawing, drawing is the slow part.
+                if (Unchanged(collectionId, stateKey, key, backdrop, dryRun))
                     continue;
                 var jpeg = PosterRenderer.Render(backdrop, images.Select(i => i.path).ToList(), style);
-                if (dryRun || !collectionId.HasValue)
-                {
-                    var dir = Path.Combine(_previewDir, backdrop ? "backdrops" : "posters");
-                    Directory.CreateDirectory(dir);
-                    var file = Path.Combine(dir, ListCache.FileName(c.Name) + ".jpg");
-                    File.WriteAllBytes(file, jpeg);
-                    _log.Info($"[{c.Name}] [dry-run] {what} preview written ({images.Count} member images): {file}");
-                    continue;
-                }
-                await _target.SetImageAsync(collectionId.Value, backdrop, jpeg, ct).ConfigureAwait(false);
-                State[stateKey] = key;
-                _log.Info($"[{c.Name}] {what} set ({images.Count} member images)");
+                await SetAsync(c, collectionId, backdrop, key, jpeg, "image/jpeg", what, $" ({images.Count} member images)", dryRun, ct)
+                    .ConfigureAwait(false);
             }
+        }
+
+        // Unchanged and still there: nothing to do. A missing image (e.g. removed by hand) is set again.
+        bool Unchanged(long? collectionId, string stateKey, string key, bool backdrop, bool dryRun) =>
+            !dryRun && collectionId.HasValue && State.TryGetValue(stateKey, out var old) && old == key
+            && _target.HasImage(collectionId.Value, backdrop);
+
+        // Uploads the image (or writes the dry-run preview) unless it is already there, and remembers its key.
+        async Task SetAsync(CollectionDefinition c, long? collectionId, bool backdrop, string key, byte[] data, string mimeType,
+            string what, string detail, bool dryRun, CancellationToken ct)
+        {
+            var stateKey = collectionId + (backdrop ? ":backdrop" : "");
+            if (Unchanged(collectionId, stateKey, key, backdrop, dryRun))
+                return;
+            if (dryRun || !collectionId.HasValue)
+            {
+                var dir = Path.Combine(_previewDir, backdrop ? "backdrops" : "posters");
+                Directory.CreateDirectory(dir);
+                var file = Path.Combine(dir, ListCache.FileName(c.Name) + (mimeType == "image/png" ? ".png" : ".jpg"));
+                File.WriteAllBytes(file, data);
+                _log.Info($"[{c.Name}] [dry-run] {what} preview written{detail}: {file}");
+                return;
+            }
+            await _target.SetImageAsync(collectionId.Value, backdrop, data, mimeType, ct).ConfigureAwait(false);
+            State[stateKey] = key;
+            _log.Info($"[{c.Name}] {what} set{detail}");
+        }
+
+        static string Sha1(byte[] data)
+        {
+            using (var sha = SHA1.Create())
+                return string.Concat(sha.ComputeHash(data).Select(b => b.ToString("x2")));
         }
 
         // The local image files of the 9 best-rated members that have one, best first (ties by name, so the pick is

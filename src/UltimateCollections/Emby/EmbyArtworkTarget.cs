@@ -1,8 +1,8 @@
 // EmbyArtworkTarget.cs
 //
 // The Emby side of posters and backdrops: hands the renderer the members' local image files and saves the finished
-// JPEG on the collection with IProviderManager.SaveImage (the same call Emby uses when an image is uploaded in the
-// web app).
+// image (our JPEG, or the user's own JPEG/PNG from images/) on the collection with IProviderManager.SaveImage (the
+// same call Emby uses when an image is uploaded in the web app).
 //
 // NOTE: SaveImage alone is not enough. It writes the file and the item in memory, but the database (and so every
 // client) still shows no image until UpdateToRepository(ImageUpdate) runs. That was the v0.2.0 bug, fixed in 0.2.1.
@@ -47,12 +47,12 @@ namespace UltimateCollections.Emby
         // Index 0 replaces the existing image: for backdrops it overwrites fanart.jpg instead of adding a second
         // backdrop (verified on Emby 4.10.1).
         // We read the image back at the end so a save that silently did nothing shows up as a warning in the log.
-        public async Task SetImageAsync(long collectionId, bool backdrop, byte[] jpeg, CancellationToken ct)
+        public async Task SetImageAsync(long collectionId, bool backdrop, byte[] data, string mimeType, CancellationToken ct)
         {
             var item = _library.GetItemById(collectionId) ?? throw new InvalidOperationException($"collection {collectionId} not found");
             var type = backdrop ? ImageType.Backdrop : ImageType.Primary;
-            using (var ms = new MemoryStream(jpeg))
-                await _providers.SaveImage(item, _library.GetLibraryOptions(item), ms, "image/jpeg".AsMemory(), type, 0,
+            using (var ms = new MemoryStream(data))
+                await _providers.SaveImage(item, _library.GetLibraryOptions(item), ms, mimeType.AsMemory(), type, 0,
                     Array.Empty<long>(), new DirectoryService(_fileSystem), true, ct).ConfigureAwait(false);
             // See the NOTE at the top (seen on 4.10.1, 2026-10-09). Emby's own upload endpoint does the same.
             item.UpdateToRepository(ItemUpdateType.ImageUpdate);

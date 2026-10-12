@@ -119,7 +119,10 @@ namespace UltimateCollections.Emby
                 var state = LoadJson<Dictionary<string, long>>(json, statePath);
                 var artworkStatePath = Path.Combine(dataDir, "artwork-state.json");
                 var artwork = new ArtworkSync(new EmbyArtworkTarget(_library, _providers, _fileSystem), Path.Combine(dataDir, "previews"),
-                    LoadJson<Dictionary<string, string>>(json, artworkStatePath), log);
+                    LoadJson<Dictionary<string, string>>(json, artworkStatePath), log)
+                {
+                    Custom = new CustomImages(Path.Combine(dataDir, "images")),
+                };
 
                 // One TMDb client for the whole run, so tmdb.Calls is the request count for the summary line. Its
                 // warnings are pointed at the collection being downloaded, so the log says which one they belong to.

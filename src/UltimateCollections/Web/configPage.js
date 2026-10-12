@@ -2,8 +2,9 @@
  * configPage.js
  *
  * Controller for the plugin's settings page (configPage.html). Loads and saves PluginConfiguration, runs the
- * "Poster style" popup (colour pickers with a server-drawn preview that write the poster_* lines into the text) and
- * drives the "Delete All Collections" danger zone.
+ * "Poster style" popup (colour pickers with a server-drawn preview that write the poster_* lines into the text), the
+ * "Custom images" popup (upload/remove the user's own posters and backdrops) and drives the "Delete All Collections"
+ * danger zone.
  *
  * NOTE: pluginId must match the GUID in Plugin.cs, and the keys of `fields` must match the PluginConfiguration
  * property names exactly. A misspelt key fails quietly: that setting just never loads or saves.
@@ -355,11 +356,282 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         });
     }
 
+    // ---- custom images popup ----
+    //
+    // The user's own poster or backdrop for a collection, instead of the generated one. One row per collection in
+    // the text box (saved or not), each with a poster slot (2:3) and a backdrop slot (16:9). A slot shows the image
+    // cropped the way Emby's apps fill that shape, says how much gets cut off, and shows the whole picture on hover
+    // or tap. Upload/Remove go straight to the server (UltimateCollections/CustomImages/*); the images are put on
+    // the collections by the next sync, so nothing needs saving here.
+
+    var maxUpload = 10 * 1024 * 1024;   // same limit as CustomImages.MaxBytes on the server
+
+    var customHtml =
+        '<style>' +
+        // NOTE: Emby's dialog footer sits over the bottom of the content, so the content gets room below the last row
+        // (found 2026-10-12: the last collection's Upload button was hidden behind Close).
+        '.ucImgDlg .formDialogContent{padding:1em 1.5em 6em;overflow-y:auto}' +
+        '.ucImgRow{display:flex;flex-wrap:wrap;gap:1.5em;align-items:flex-start;padding:1.1em 0;border-bottom:1px solid rgba(128,128,128,.25)}' +
+        '.ucImgRow:last-child{border-bottom:0}' +
+        '.ucImgName{flex:1 0 100%;font-weight:500;font-size:1.05em}' +
+        '.ucSlot{display:flex;flex-direction:column;gap:.45em}' +
+        '.ucSlotPoster{width:140px}' +
+        '.ucSlotBackdrop{width:280px;max-width:100%}' +
+        '.ucSlotLabel{font-size:.8em;text-transform:uppercase;letter-spacing:.06em;opacity:.65}' +
+        '.ucFrame{position:relative;width:100%;border-radius:4px;overflow:hidden;background:#1c1c1c;cursor:default}' +
+        '.ucSlotPoster .ucFrame{aspect-ratio:2/3}' +
+        '.ucSlotBackdrop .ucFrame{aspect-ratio:16/9}' +
+        '.ucFrame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}' +
+        '.ucFrame.ucHasImg:hover img,.ucFrame.ucShowAll img{object-fit:contain}' +
+        '.ucFrame.ucHasImg{cursor:zoom-in}' +
+        '.ucBadge{position:absolute;left:.4em;top:.4em;z-index:1;font-size:.68em;letter-spacing:.06em;text-transform:uppercase;padding:.15em .55em;border-radius:3px;background:rgba(0,0,0,.7);color:#fff}' +
+        '.ucBadgeCustom{background:#52b54b}' +
+        '.ucEmpty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:.6em;font-size:.85em;color:#bbb;border:2px dashed rgba(160,160,160,.5);border-radius:4px}' +
+        '.ucBad{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:.6em;font-size:.82em;color:#e09a2b;border:2px solid #e09a2b;border-radius:4px}' +
+        '.ucMeta{font-size:.8em;opacity:.75;line-height:1.35;min-height:2.7em}' +
+        '.ucCut{color:#e09a2b;opacity:1}' +
+        '.ucSlotButtons{display:flex;gap:.5em;flex-wrap:wrap}' +
+        '.ucSmallBtn{font:inherit;font-size:.85em;color:inherit;background:transparent;border:1px solid rgba(128,128,128,.55);border-radius:3px;padding:.3em .8em;cursor:pointer}' +
+        '.ucSmallBtn:hover{border-color:#52b54b}' +
+        '.ucSmallBtn[disabled]{opacity:.4;cursor:default}' +
+        '.ucImgDlg .formDialogFooter{display:flex;justify-content:flex-end;gap:.8em;padding:1em 1.5em}' +
+        '</style>' +
+        '<div class="formDialogHeader">' +
+        '  <button is="paper-icon-button-light" class="btnCancel autoSize" tabindex="-1" title="Close"><i class="md-icon">close</i></button>' +
+        '  <h3 class="formDialogHeaderTitle">Custom images</h3>' +
+        '</div>' +
+        '<div class="formDialogContent">' +
+        '  <p class="ucHint" style="margin-top:0">Your own poster or backdrop replaces the generated one for that collection. ' +
+        '  JPEG or PNG, up to 10 MB; best at 1000x1500 for posters and 1920x1080 for backdrops. The frames show how Emby\'s apps ' +
+        '  crop the picture; hover or tap one to see the whole image. Changes reach the collections on the next sync ' +
+        '  (Scheduled Tasks &gt; Sync collections &gt; Run now). Remove a custom image to go back to the generated one.</p>' +
+        '  <div class="ucImgRows">Loading...</div>' +
+        '</div>' +
+        '<div class="formDialogFooter">' +
+        '  <button is="emby-button" type="button" class="raised button-cancel ucCancel"><span>Close</span></button>' +
+        '</div>';
+
+    // How much of the picture Emby cuts off to fill the frame (centre crop), as a sentence; '' when it fits.
+    function cropNote(w, h, frameW, frameH) {
+        var a = w / h, r = frameW / frameH;
+        if (Math.abs(a - r) / r < 0.02) {
+            return '';
+        }
+        var cut = a > r ? 1 - r / a : 1 - a / r;
+        var pct = Math.round(cut * 50);
+        if (pct < 1) {
+            return '';
+        }
+        return a > r ? 'About ' + pct + '% is cut off on the left and right.' : 'About ' + pct + '% is cut off at the top and bottom.';
+    }
+
+    function sizeText(bytes) {
+        return bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    }
+
+    // Emby's ApiClient rejects with the fetch Response; the server's message (e.g. "x is not an image") is its body.
+    function errorText(err) {
+        if (err && typeof err.text === 'function') {
+            return err.text().then(function (t) { return t || 'The request failed.'; }, function () { return 'The request failed.'; });
+        }
+        return Promise.resolve('The request failed.');
+    }
+
+    function postJson(path, body) {
+        return ApiClient.ajax({
+            type: 'POST',
+            url: ApiClient.getUrl(path),
+            data: JSON.stringify(body),
+            contentType: 'application/json',
+            dataType: 'json'
+        });
+    }
+
+    function openCustomImages(view) {
+        var textArea = view.querySelector('#ucCollectionsText');
+        var sections = readSections(textArea.value);
+        if (!sections.length) {
+            require(['toast'], function (toast) {
+                (toast.default || toast)('Add a [collection NAME] section to the collections text first.');
+            });
+            return;
+        }
+        require(['dialogHelper', 'toast'], function (dialogHelper, toast) {
+            dialogHelper = dialogHelper.default || dialogHelper;
+            toast = toast.default || toast;
+
+            var dlg = dialogHelper.createDialog({ size: 'medium', removeOnClose: true, scrollY: false });
+            dlg.classList.add('formDialog', 'ucImgDlg');
+            dlg.innerHTML = customHtml;
+            var rows = dlg.querySelector('.ucImgRows');
+
+            // One hidden file picker for every slot; `target` says which slot it is for.
+            var picker = document.createElement('input');
+            picker.type = 'file';
+            picker.accept = 'image/jpeg,image/png';
+            picker.style.display = 'none';
+            dlg.appendChild(picker);
+            var target = null;
+
+            // What each collection has in Emby now (CurrentPoster/CurrentBackdrop from the list), kept so a slot can show
+            // it again after its custom image is removed.
+            var current = {};
+
+            // Collections that are not built yet (out of season, or new) have no image in Emby, so we ask the Poster
+            // style preview to draw one: same renderer and colours the sync will use, nothing saved. One request at a
+            // time, so opening the popup does not make the server draw a dozen posters at once.
+            var previews = Promise.resolve();
+            function queuePreview(slotEl, name, backdrop) {
+                var s = readSections(textArea.value).filter(function (x) { return x.name === name; })[0];
+                var k = (s && s.keys) || {};
+                var val = function (key) { return k[key] ? k[key].value : ''; };
+                previews = previews.then(function () {
+                    return postJson('UltimateCollections/PosterPreview', {
+                        Name: name, Title: val('poster_title'), Accent: val('poster_accent'), Tint: val('poster_tint'),
+                        Sepia: val('poster_sepia'), Backdrop: backdrop
+                    }).then(function (r) {
+                        var empty = slotEl.querySelector('.ucEmpty');
+                        if (!r.Image || !empty) {
+                            return;     // nothing to draw from, or the slot changed meanwhile (an upload)
+                        }
+                        current[name + (backdrop ? '|b' : '|p')] = r.Image;
+                        current[name + (backdrop ? '|b' : '|p') + 'src'] = r.Source;
+                        renderSlot(slotEl, name, backdrop, null);
+                    }, function () { /* keep the empty frame */ });
+                });
+            }
+
+            // Draws one slot from the server's answer (img = CustomImageView or null). Without a custom image the slot
+            // shows the collection's current poster/backdrop in Emby, so it is never just an empty frame.
+            function renderSlot(slotEl, name, backdrop, img) {
+                var now = current[name + (backdrop ? '|b' : '|p')];
+                var previewOf = current[name + (backdrop ? '|b' : '|p') + 'src'];
+                var frameW = backdrop ? 16 : 2, frameH = backdrop ? 9 : 3;
+                var html = '<span class="ucSlotLabel">' + (backdrop ? 'Backdrop' : 'Poster') + '</span>';
+                var meta = '';
+                if (!img && now && previewOf) {
+                    html += '<div class="ucFrame ucHasImg" title="Hover or tap to see the whole picture"><span class="ucBadge">Preview</span><img alt=""></div>';
+                    meta = 'Not built yet. Made from ' + escapeHtml(previewOf) + '.';
+                } else if (!img && now) {
+                    html += '<div class="ucFrame ucHasImg" title="Hover or tap to see the whole picture"><span class="ucBadge">Generated</span><img alt=""></div>';
+                    meta = 'Made by the plugin. Upload your own to replace it.';
+                } else if (!img) {
+                    html += '<div class="ucFrame"><div class="ucEmpty">Making a preview...</div></div>';
+                    meta = 'The collection is not built yet (out of season, or new).';
+                    queuePreview(slotEl, name, backdrop);
+                } else if (img.Error) {
+                    html += '<div class="ucFrame"><div class="ucBad">' + escapeHtml(img.Error) + '. Not used.</div></div>';
+                    meta = escapeHtml(img.FileName);
+                } else {
+                    html += '<div class="ucFrame ucHasImg" title="Hover or tap to see the whole picture"><span class="ucBadge ucBadgeCustom">Custom</span><img alt=""></div>';
+                    var cut = cropNote(img.Width, img.Height, frameW, frameH);
+                    meta = escapeHtml(img.FileName) + '<br>' + img.Width + 'x' + img.Height + ', ' + sizeText(img.Bytes) +
+                        (cut ? '<br><span class="ucCut">' + cut + '</span>' : '');
+                }
+                if (img && img.Others) {
+                    meta += '<br><span class="ucCut">' + img.Others + ' more file(s) match; this one is used.</span>';
+                }
+                html += '<div class="ucMeta">' + meta + '</div><div class="ucSlotButtons">' +
+                    '<button type="button" class="ucSmallBtn ucUp">' + (img ? 'Replace' : 'Upload') + '</button>' +
+                    (img ? '<button type="button" class="ucSmallBtn ucRemove">Remove</button>' : '') + '</div>';
+                slotEl.innerHTML = html;
+                var thumb = img ? img.Thumb : now;
+                if (thumb) {
+                    slotEl.querySelector('img').src = thumb;
+                    // Tap toggles the whole picture on touch screens, where there is no hover.
+                    slotEl.querySelector('.ucFrame').addEventListener('click', function () { this.classList.toggle('ucShowAll'); });
+                }
+                slotEl.querySelector('.ucUp').addEventListener('click', function () {
+                    target = { el: slotEl, name: name, backdrop: backdrop };
+                    picker.value = '';
+                    picker.click();
+                });
+                if (img) {
+                    slotEl.querySelector('.ucRemove').addEventListener('click', function () {
+                        busy(slotEl, true);
+                        postJson('UltimateCollections/CustomImages/Delete', { Name: name, Backdrop: backdrop }).then(function (r) {
+                            renderSlot(slotEl, name, backdrop, backdrop ? r.Backdrop : r.Poster);
+                            toast(name + ': custom ' + (backdrop ? 'backdrop' : 'poster') + ' removed. The generated one comes back on the next sync.');
+                        }, function (err) {
+                            busy(slotEl, false);
+                            errorText(err).then(toast);
+                        });
+                    });
+                }
+            }
+
+            function busy(slotEl, on) {
+                Array.prototype.forEach.call(slotEl.querySelectorAll('button'), function (b) { b.disabled = on; });
+                slotEl.style.opacity = on ? 0.5 : '';
+            }
+
+            // Upload: checked here for size first (no point sending 40 MB to be refused), then sent as base64; the
+            // server checks it again properly (real format, dimensions).
+            picker.addEventListener('change', function () {
+                var file = picker.files && picker.files[0];
+                var t = target;
+                if (!file || !t) {
+                    return;
+                }
+                if (file.size > maxUpload) {
+                    toast(file.name + ' is ' + sizeText(file.size) + '; the limit is 10 MB.');
+                    return;
+                }
+                busy(t.el, true);
+                var reader = new FileReader();
+                reader.onload = function () {
+                    var data = String(reader.result).replace(/^data:[^,]*,/, '');
+                    postJson('UltimateCollections/CustomImages/Upload', { Name: t.name, Backdrop: t.backdrop, Data: data }).then(function (r) {
+                        renderSlot(t.el, t.name, t.backdrop, t.backdrop ? r.Backdrop : r.Poster);
+                        toast(t.name + ': custom ' + (t.backdrop ? 'backdrop' : 'poster') + ' saved. It is put on the collection on the next sync.');
+                    }, function (err) {
+                        busy(t.el, false);
+                        errorText(err).then(toast);
+                    });
+                };
+                reader.onerror = function () {
+                    busy(t.el, false);
+                    toast('Could not read ' + file.name + '.');
+                };
+                reader.readAsDataURL(file);
+            });
+
+            dlg.querySelector('.btnCancel').addEventListener('click', function () { dialogHelper.close(dlg); });
+            dlg.querySelector('.ucCancel').addEventListener('click', function () { dialogHelper.close(dlg); });
+            dialogHelper.open(dlg);
+
+            var names = sections.map(function (s) { return s.name; });
+            postJson('UltimateCollections/CustomImages/List', { Names: names.join('\n') }).then(function (list) {
+                var byName = {};
+                (list || []).forEach(function (x) { byName[x.Name] = x; });
+                rows.innerHTML = '';
+                names.forEach(function (name) {
+                    var row = document.createElement('div');
+                    row.className = 'ucImgRow';
+                    row.innerHTML = '<div class="ucImgName"></div><div class="ucSlot ucSlotPoster"></div><div class="ucSlot ucSlotBackdrop"></div>';
+                    row.querySelector('.ucImgName').textContent = name;
+                    var x = byName[name] || {};
+                    current[name + '|p'] = x.CurrentPoster;
+                    current[name + '|b'] = x.CurrentBackdrop;
+                    renderSlot(row.querySelector('.ucSlotPoster'), name, false, x.Poster);
+                    renderSlot(row.querySelector('.ucSlotBackdrop'), name, true, x.Backdrop);
+                    rows.appendChild(row);
+                });
+            }, function (err) {
+                errorText(err).then(function (t) { rows.textContent = 'Could not load the custom images: ' + t; });
+            });
+        });
+    }
+
+
     function View(view, params) {
         BaseView.apply(this, arguments);
 
         view.querySelector('#ucPosterStyle').addEventListener('click', function () {
             openPosterStyle(view);
+        });
+        view.querySelector('#ucCustomImages').addEventListener('click', function () {
+            openCustomImages(view);
         });
 
         var confirmInput = view.querySelector('#ucDeleteConfirm');

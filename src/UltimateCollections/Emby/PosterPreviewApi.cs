@@ -2,7 +2,8 @@
 //
 // The REST route behind the settings page's "Poster style" popup: draws a collection's poster with the colours being
 // tried, using the same renderer and the same member images the nightly sync would use, and hands it back as a data
-// URL. Nothing is saved or uploaded; the popup only writes lines into the settings text.
+// URL. Nothing is saved or uploaded; the popup only writes lines into the settings text. The Custom images popup uses
+// it too (Backdrop=true for backdrops), to show something for collections that are not built yet.
 //
 // NOTE: admin only, like the Danger zone routes. It reads the library, state.json and the saved lists, and never
 // downloads anything, so trying colours costs no TMDb requests.
@@ -35,6 +36,9 @@ namespace UltimateCollections.Emby
         public string Accent { get; set; }
         public string Tint { get; set; }
         public string Sepia { get; set; }
+
+        // Draw the backdrop instead of the poster (the Custom images popup previews both for collections not built yet).
+        public bool Backdrop { get; set; }
     }
 
     public class PosterPreview
@@ -94,11 +98,11 @@ namespace UltimateCollections.Emby
             var style = PosterStyle.For(def);
 
             var (members, source) = Members(name);
-            var images = ArtworkSync.BestImages(new EmbyArtworkTarget(_library, _providers, _fileSystem), members, false);
+            var images = ArtworkSync.BestImages(new EmbyArtworkTarget(_library, _providers, _fileSystem), members, request.Backdrop);
             return new PosterPreview
             {
                 Image = images.Count == 0 ? null
-                    : "data:image/jpeg;base64," + Convert.ToBase64String(PosterRenderer.Render(false, images.Select(i => i.path).ToList(), style)),
+                    : "data:image/jpeg;base64," + Convert.ToBase64String(PosterRenderer.Render(request.Backdrop, images.Select(i => i.path).ToList(), style)),
                 Accent = $"{style.Accent.Red},{style.Accent.Green},{style.Accent.Blue}",
                 Tint = $"{style.Tint.Red},{style.Tint.Green},{style.Tint.Blue}",
                 Title = string.Join("|", style.Lines),
