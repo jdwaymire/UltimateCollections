@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.2.0 (2026-10-12)
+
+### Home screen rows: collections on your users' home screens
+
+- New **Home screen rows** section on the settings page (Emby 4.10 or newer). **Off by default**, so nothing changes
+  until you switch it on; if you already use another plugin for home screens, let only one of them manage collection
+  rows.
+- Seasonal collections get a row automatically: Halloween appears on the home screen when its season starts and
+  hides when it ends. Other collections get one with the new key `home_screen yes`; `home_screen no` keeps one off.
+- Choose which users get the rows (all users, or a list), the style (a row of posters, or a big **spotlight** banner;
+  per collection with `home_screen spotlight`), and where new rows go (after Continue Watching, at the top, or at the
+  bottom).
+- Rows stay put all year: out of season they are empty and hidden, and next season they come back in the same spot,
+  so users can arrange their home screen and keep it that way. A row a user removes stays removed.
+- Only one spotlight shows at a time; when two spotlight collections overlap, the first one in the settings keeps it.
+  Optionally, a seasonal spotlight moves to the top when its season starts (the full-screen banner in the web app).
+- Rows already on a home screen for one of the plugin's collections (made by hand, or copied with Emby's *Copy Data
+  to Users*) are taken over instead of doubled. Rows for anything else are never touched.
+- A **Rows right now** table shows each collection's row (showing, hidden until a date, or none) and how many users
+  have it.
+- Each user's home screen is backed up before the plugin first changes it on a day. Switching the feature off asks
+  whether to remove the plugin's rows or leave them.
+
 ## 1.1.5 (2026-10-12)
 
 ### Custom images: use your own poster or backdrop for any collection

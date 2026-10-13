@@ -3,13 +3,13 @@
  *
  * Controller for the plugin's settings page (configPage.html). Loads and saves PluginConfiguration, runs the
  * "Poster style" popup (colour pickers with a server-drawn preview that write the poster_* lines into the text), the
- * "Custom images" popup (upload/remove the user's own posters and backdrops) and drives the "Delete All Collections"
- * danger zone.
+ * "Custom images" popup (upload/remove the user's own posters and backdrops), the "Home screen rows" section (users,
+ * the rows table, the switch-off confirm box) and drives the "Delete All Collections" danger zone.
  *
  * NOTE: pluginId must match the GUID in Plugin.cs, and the keys of `fields` must match the PluginConfiguration
  * property names exactly. A misspelt key fails quietly: that setting just never loads or saves.
  */
-define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'emby-textarea'], function (BaseView, loading) {
+define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'emby-textarea', 'emby-select', 'emby-radio'], function (BaseView, loading) {
     'use strict';
 
     var pluginId = 'ec206e22-423b-4c99-8507-75c7b6c119e5';
@@ -22,8 +22,14 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         DryRun: ['ucDryRun', 'checked'],
         ShowTitles: ['ucShowTitles', 'checked'],
         IgnoreSeason: ['ucIgnoreSeason', 'checked'],
-        RefreshNextRun: ['ucRefreshNextRun', 'checked']
+        RefreshNextRun: ['ucRefreshNextRun', 'checked'],
+        ManageHomeRows: ['ucManageHomeRows', 'checked'],
+        HomeRowStyle: ['ucHomeRowStyle', 'value'],
+        HomeRowPosition: ['ucHomeRowPosition', 'value'],
+        HomeRowSeasonal: ['ucHomeRowSeasonal', 'checked'],
+        HomeRowSpotlightTop: ['ucHomeRowSpotlightTop', 'checked']
     };
+    // HomeRowUsers is not in `fields`: it is the radio pair plus the user checklist (see readUsers / showUsers).
 
     var confirmWord = 'DELETE';
 
@@ -623,6 +629,151 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         });
     }
 
+    // ---- home screen rows ----
+    //
+    // The options only show while "Manage home screen rows" is ticked. HomeRowUsers is "all" or a comma-separated
+    // list of user ids, from the radio pair and the checklist. The table comes from the server (saved settings and
+    // home-rows.json), so it shows what the next run works from, not the unsaved page.
+    // NOTE: switching it off is not a plain Save: if it was on, the confirm box asks whether to remove our rows and
+    // the server switches it off itself (HomeRowsApi), so the setting and the home screens never disagree.
+
+    function showHomeOptions(view) {
+        var on = view.querySelector('#ucManageHomeRows').checked;
+        view.querySelector('.ucHomeOptions').style.display = on ? '' : 'none';
+        var chosen = view.querySelector('#ucHomeUsersChosen').checked;
+        view.querySelector('.ucUserPick').style.display = chosen ? '' : 'none';
+    }
+
+    // Fills the user checklist and the radio pair from the saved HomeRowUsers value.
+    function showUsers(view, saved) {
+        var list = view.querySelector('.ucUserList');
+        var ids = (saved || 'all').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
+        var all = !ids.length || ids.some(function (x) { return x.toLowerCase() === 'all'; });
+        view.querySelector('#ucHomeUsersAll').checked = all;
+        view.querySelector('#ucHomeUsersChosen').checked = !all;
+        showHomeOptions(view);
+        return ApiClient.getUsers().then(function (users) {
+            list.innerHTML = '';
+            users.forEach(function (u) {
+                var label = document.createElement('label');
+                label.style.display = 'block';
+                label.innerHTML = '<input is="emby-checkbox" type="checkbox" class="ucUserBox"><span></span>';
+                label.querySelector('input').value = u.Id;
+                label.querySelector('input').checked = !all && ids.indexOf(u.Id) >= 0;
+                label.querySelector('span').textContent = u.Name + (u.Policy && u.Policy.IsAdministrator ? ' (admin)' : '');
+                list.appendChild(label);
+            });
+        }, function () {
+            list.textContent = 'Could not load the users.';
+        });
+    }
+
+    function readUsers(view) {
+        if (view.querySelector('#ucHomeUsersAll').checked) {
+            return 'all';
+        }
+        return Array.prototype.filter.call(view.querySelectorAll('.ucUserBox'), function (b) { return b.checked; })
+            .map(function (b) { return b.value; }).join(',');
+    }
+
+    // The "Rows right now" table. lastRows keeps the answer for the switch-off box (how many rows it would remove).
+    var lastRows = null;
+    function loadHomeTable(view) {
+        var box = view.querySelector('.ucHomeTable');
+        var notes = view.querySelector('.ucHomeNotes');
+        ApiClient.getJSON(ApiClient.getUrl('UltimateCollections/HomeRows')).then(function (r) {
+            lastRows = r;
+            notes.innerHTML = '';
+            if (r.Error) {
+                box.textContent = r.Error;
+                return;
+            }
+            var th = 'style="text-align:left;padding:.45em .8em;font-weight:500;border-bottom:1px solid rgba(128,128,128,.35)"';
+            var td = 'style="padding:.45em .8em;border-bottom:1px solid rgba(128,128,128,.15)"';
+            var html = '<table style="width:100%;min-width:36em;border-collapse:collapse;font-size:.92em"><thead><tr>' +
+                '<th ' + th + '>Collection</th><th ' + th + '>Season</th><th ' + th + '>Row</th><th ' + th + '>Style</th><th ' + th + '>Users</th>' +
+                '</tr></thead><tbody>';
+            (r.Rows || []).forEach(function (x) {
+                var pill = x.Status === 'Showing' ? 'background:#52b54b;color:#fff' :
+                    x.Status === 'No row' ? 'opacity:.6' : 'background:rgba(128,128,128,.25)';
+                var users = x.Status === 'No row' ? '' : x.Users + (x.Removed ? ' (' + x.Removed + ' removed it)' : '');
+                html += '<tr><td ' + td + '><b>' + escapeHtml(x.Name) + '</b></td><td ' + td + '>' + escapeHtml(x.Season) + '</td>' +
+                    '<td ' + td + '><span style="display:inline-block;padding:.1em .7em;border-radius:1em;' + pill + '">' + escapeHtml(x.Status) + '</span></td>' +
+                    '<td ' + td + '>' + escapeHtml(x.Style) + '</td><td ' + td + '>' + escapeHtml(users) + '</td></tr>';
+            });
+            box.innerHTML = html + '</tbody></table>';
+            (r.Notes || []).forEach(function (n) {
+                var p = document.createElement('p');
+                p.style.cssText = 'margin:.6em 0 0;padding:.5em .8em;border-radius:4px;background:rgba(224,154,43,.15);color:#e09a2b;font-size:.9em';
+                p.textContent = n;
+                notes.appendChild(p);
+            });
+        }, function () {
+            box.textContent = 'Could not load the home screen rows.';
+        });
+    }
+
+    var switchOffHtml =
+        '<div class="formDialogHeader">' +
+        '  <button is="paper-icon-button-light" class="btnCancel autoSize" tabindex="-1" title="Close"><i class="md-icon">close</i></button>' +
+        '  <h3 class="formDialogHeaderTitle">Stop managing home screen rows?</h3>' +
+        '</div>' +
+        '<div class="formDialogContent" style="padding:1em 1.5em">' +
+        '  <p class="ucOffCount"></p>' +
+        '  <label class="radio-label-block"><input type="radio" is="emby-radio" name="ucOff" value="remove" checked><span><b>Remove the rows the plugin added</b></span></label>' +
+        '  <div class="fieldDescription" style="margin:0 0 1em 2.2em">Rows users made themselves, or that another plugin added, are not touched. ' +
+        '  A backup of each user\'s home screen is saved first (backups/ in the plugin\'s data folder).</div>' +
+        '  <label class="radio-label-block"><input type="radio" is="emby-radio" name="ucOff" value="leave"><span><b>Leave them as they are</b></span></label>' +
+        '  <div class="fieldDescription" style="margin:0 0 1em 2.2em">They stop following the seasons and may point to old collections.</div>' +
+        '</div>' +
+        '<div class="formDialogFooter" style="display:flex;justify-content:flex-end;gap:.8em;padding:1em 1.5em">' +
+        '  <button is="emby-button" type="button" class="raised button-cancel ucCancel"><span>Cancel</span></button>' +
+        '  <button is="emby-button" type="button" class="raised button-submit ucOff"><span>Switch off</span></button>' +
+        '</div>';
+
+    // Cancel (or closing the box) ticks the setting again. The server does the rest and saves the setting off.
+    function openSwitchOff(view, done) {
+        var box = view.querySelector('#ucManageHomeRows');
+        require(['dialogHelper', 'toast'], function (dialogHelper, toast) {
+            dialogHelper = dialogHelper.default || dialogHelper;
+            toast = toast.default || toast;
+            var dlg = dialogHelper.createDialog({ size: 'small', removeOnClose: true, scrollY: false });
+            dlg.classList.add('formDialog');
+            dlg.innerHTML = switchOffHtml;
+            var rows = 0, users = lastRows ? lastRows.UsersWithRows : 0;
+            ((lastRows && lastRows.Rows) || []).forEach(function (x) { rows += x.Users; });
+            dlg.querySelector('.ucOffCount').textContent = rows
+                ? 'The plugin manages ' + rows + ' row' + (rows === 1 ? '' : 's') + ' on ' + users + ' user' + (users === 1 ? "'s" : "s'") + ' home screens.'
+                : 'The plugin has no rows on any home screen right now.';
+            var switched = false;
+            function close() { dialogHelper.close(dlg); }
+            dlg.querySelector('.btnCancel').addEventListener('click', close);
+            dlg.querySelector('.ucCancel').addEventListener('click', close);
+            dlg.addEventListener('close', function () {
+                if (!switched) {
+                    box.checked = true;
+                    showHomeOptions(view);
+                }
+            });
+            dlg.querySelector('.ucOff').addEventListener('click', function () {
+                var remove = dlg.querySelector('input[name=ucOff]:checked').value === 'remove';
+                loading.show();
+                postJson('UltimateCollections/HomeRows/SwitchOff', { RemoveRows: remove }).then(function (r) {
+                    loading.hide();
+                    switched = true;
+                    close();
+                    done();
+                    toast(remove ? 'Home screen rows switched off; ' + r.Removed + ' row(s) removed.' : 'Home screen rows switched off; the rows were left as they are.');
+                    loadHomeTable(view);
+                }, function (err) {
+                    loading.hide();
+                    errorText(err).then(toast);
+                });
+            });
+            dialogHelper.open(dlg);
+        });
+    }
+
 
     function View(view, params) {
         BaseView.apply(this, arguments);
@@ -632,6 +783,25 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         });
         view.querySelector('#ucCustomImages').addEventListener('click', function () {
             openCustomImages(view);
+        });
+
+        // homeSaved = whether rows are on in the SAVED settings; only then does unticking need the confirm box.
+        var self = this;
+        self.homeSaved = false;
+        var homeBox = view.querySelector('#ucManageHomeRows');
+        homeBox.addEventListener('change', function () {
+            showHomeOptions(view);
+            if (!homeBox.checked && self.homeSaved) {
+                openSwitchOff(view, function () { self.homeSaved = false; });
+            }
+        });
+        view.querySelector('#ucHomeUsersAll').addEventListener('change', function () { showHomeOptions(view); });
+        view.querySelector('#ucHomeUsersChosen').addEventListener('change', function () { showHomeOptions(view); });
+        view.querySelector('.ucUsersAll').addEventListener('click', function () {
+            Array.prototype.forEach.call(view.querySelectorAll('.ucUserBox'), function (b) { b.checked = true; });
+        });
+        view.querySelector('.ucUsersNone').addEventListener('click', function () {
+            Array.prototype.forEach.call(view.querySelectorAll('.ucUserBox'), function (b) { b.checked = false; });
         });
 
         var confirmInput = view.querySelector('#ucDeleteConfirm');
@@ -682,9 +852,12 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
                 Object.keys(fields).forEach(function (key) {
                     config[key] = view.querySelector('#' + fields[key][0])[fields[key][1]];
                 });
+                config.HomeRowUsers = readUsers(view);
                 return ApiClient.updatePluginConfiguration(pluginId, config);
             }).then(function (result) {
+                self.homeSaved = view.querySelector('#ucManageHomeRows').checked;
                 Dashboard.processPluginConfigurationUpdateResult(result);
+                loadHomeTable(view);
             });
             return false;
         });
@@ -700,11 +873,22 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         view.querySelector('#ucDeleteConfirm').value = '';
         view.querySelector('#ucDeleteAll').disabled = true;
         loading.show();
+        var self = this;
         ApiClient.getPluginConfiguration(pluginId).then(function (config) {
             Object.keys(fields).forEach(function (key) {
                 var v = config[key];
                 view.querySelector('#' + fields[key][0])[fields[key][1]] = fields[key][1] === 'checked' ? !!v : (v || '');
             });
+            // Selects need a value they have; an old or empty setting falls back to the first option.
+            ['#ucHomeRowStyle', '#ucHomeRowPosition'].forEach(function (sel) {
+                var el = view.querySelector(sel);
+                if (!el.value) {
+                    el.selectedIndex = 0;
+                }
+            });
+            self.homeSaved = !!config.ManageHomeRows;
+            showUsers(view, config.HomeRowUsers);
+            loadHomeTable(view);
             loading.hide();
         });
     };

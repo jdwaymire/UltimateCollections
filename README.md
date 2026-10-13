@@ -46,7 +46,9 @@ You write a short description of each collection, and the plugin does the rest e
 - creates **seasonal collections** only during their season (Halloween in October, Christmas in December) and removes
   them afterwards;
 - draws a **poster and a backdrop** for every collection from the artwork of its best-rated movies, or uses
-  **your own pictures** if you upload them.
+  **your own pictures** if you upload them;
+- if you want, puts collections on your users' **home screens** as rows: Halloween shows up there in October and
+  goes away in November, in the spot each user gave it.
 
 ![Collections in Emby](docs/images/collections-overview.png)
 
@@ -61,14 +63,15 @@ You write a short description of each collection, and the plugin does the rest e
 5. [Writing collections: the config language](#writing-collections-the-config-language)
 6. [Recipes: examples explained](#recipes-examples-explained)
 7. [Posters and backdrops](#posters-and-backdrops)
-8. [How the nightly sync works](#how-the-nightly-sync-works)
-9. [Delete All Collections](#delete-all-collections)
-10. [Files and logs](#files-and-logs)
-11. [Troubleshooting and FAQ](#troubleshooting-and-faq)
-12. [Building from source](#building-from-source)
-13. [Support](#support)
-14. [Disclaimer](#disclaimer)
-15. [Credits](#credits)
+8. [Home screen rows](#home-screen-rows)
+9. [How the nightly sync works](#how-the-nightly-sync-works)
+10. [Delete All Collections](#delete-all-collections)
+11. [Files and logs](#files-and-logs)
+12. [Troubleshooting and FAQ](#troubleshooting-and-faq)
+13. [Building from source](#building-from-source)
+14. [Support](#support)
+15. [Disclaimer](#disclaimer)
+16. [Credits](#credits)
 
 ---
 
@@ -176,6 +179,7 @@ From then on the task runs **every day at 05:00** (change the time in Scheduled 
 | **Custom images...** | Opens a popup for uploading your own poster or backdrop for a collection, instead of the generated one (see [Your own poster or backdrop](#your-own-poster-or-backdrop)). |
 | **Only these collections** | Comma-separated collection names, e.g. `Halloween, Dinosaurs`. The next runs touch only those. Empty = all. Useful while you build or fix one collection. |
 | **Collections** | The collection definitions, written in the config language below. |
+| **Home screen rows** | Off by default. Puts collections on your users' home screens as rows (see [Home screen rows](#home-screen-rows)). |
 
 Below the form is the **Danger zone** with *Delete All Collections* (see [below](#delete-all-collections)).
 
@@ -271,6 +275,7 @@ This is the one rule worth reading twice:
 | `tv` | `tv yes` | Also include **TV shows** from the same sources (default: movies only). Not possible together with `tmdb_actor`. TMDb uses different genres for TV (there is no "Horror" for shows), so movie-only genres in `exclude_genre` are skipped for the TV part. |
 | `min_items` | `min_items 5` | Overrides the global `min_items` for this collection. |
 | `max_pages` | `max_pages 25` | Overrides the global `max_pages` for this collection (25 pages = top 500 titles). |
+| `home_screen` | `home_screen spotlight` | Only used when *Manage home screen rows* is on. `yes` = a row on the home screen, `spotlight` = a row shown as a big banner, `no` = never a row (also for a seasonal collection). See [Home screen rows](#home-screen-rows). Changing it never causes a list download. |
 
 ### Poster settings
 
@@ -545,6 +550,89 @@ isn't a usable JPEG or PNG is skipped with a warning in the log, and the collect
 
 ---
 
+## Home screen rows
+
+Emby 4.10 lets every user arrange their own home screen with rows of their choice. The plugin can put your
+collections there too, and keep them right through the year: **Halloween appears on the home screen on October 1st
+and is gone on November 1st**, without anyone opening a settings page.
+
+It is **off by default**. Tick **Manage home screen rows** on the settings page, pick the options, press **Save**, and
+the rows appear on the next sync (or press *Run now* on the task).
+
+![The Home screen rows settings](docs/images/home-screen-rows.png)
+
+> **Already using another plugin for home screens** (for example Home Screen Companion)? Let only one of them manage
+> collection rows. If the other plugin copies home screens between users, a user can end up with a row twice.
+
+### Which collections get a row
+
+- **Seasonal collections** get one automatically (tick box *Seasonal collections get a row automatically*, on by
+  default).
+- **Other collections** get one only when you ask for it: add `home_screen yes` to the collection.
+- `home_screen no` keeps a collection off the home screen, also a seasonal one.
+- `home_screen spotlight` shows the row as a big **spotlight** banner instead of a row of posters.
+
+```ini
+[collection Halloween]
+tmdb_keyword  halloween
+season        10-01 10-31
+home_screen   spotlight      # a banner in October
+
+[collection Trekkie]
+title         Star Trek
+tv            yes
+home_screen   yes            # a permanent collection: asks for a row
+```
+
+### The options
+
+| Option | What it does |
+|---|---|
+| **Which users** | *All users* (including users added later), or *Only these users* with a list to tick. |
+| **Default style** | *Cards* (a row of posters, like *Latest Movies*) or *Spotlight* (a big banner). `home_screen spotlight` sets it for one collection. |
+| **Where new rows go** | *After Continue Watching / Next Up* (default), *at the top* or *at the bottom*. Only used when a row is first added: when a user moves a row, it stays where they put it. |
+| **Move a seasonal spotlight to the top when its season starts** | Off by default. The web app shows the first row of the home screen as a full-screen banner; with this on, a seasonal spotlight collection takes that spot when its season starts, and moves to the bottom when it ends. Users can still move it down. TV apps show it as a banner row. |
+| **Seasonal collections get a row automatically** | See above. |
+
+Below the options, **Rows right now** shows every collection with its row: *Showing*, *Hidden until Dec 1*, or *No
+row*, its style, and how many users have it.
+
+### How rows behave
+
+- **A row is added once and then stays.** Out of season the collection is gone, so its row is empty, and Emby
+  doesn't show empty rows. When the season comes back, the row is pointed at the new collection and shows again, **in
+  the same spot**. Users can arrange their home screen the way they like, and their order is kept.
+- **Users decide.** If a user removes a row from their home screen, they don't get it back.
+- **Only one spotlight at a time.** Two banners on top of each other are a lot of screen. When two spotlight
+  collections are in season together (Christmas and Winter Time in December, say), the one listed first in your
+  settings keeps the spotlight and the other shows as a row of posters until the first one's season ends. The
+  settings page tells you when this happens.
+- **Rows that are already there are used.** If a user already has a row for one of the plugin's collections (made
+  by hand, or copied from another user with Emby's *Copy Data to Users*), the plugin takes that row over instead of
+  adding a second one. If a user has two rows for the same collection, the higher one stays.
+- **Nothing else is touched.** The plugin only changes rows it added or took over. Emby's own rows, rows for anything
+  else, and rows from other plugins are left alone.
+- **A backup first.** Before the first change to a user's home screen on a day, the plugin saves that user's whole
+  home screen to `backups/home-sections-<user>-<date>.json`.
+- **Dry run** also covers home screens: the log says what would be added, changed or removed, and nothing is.
+
+### Switching it off
+
+Untick **Manage home screen rows**. A box asks what to do with the rows:
+
+- **Remove the rows the plugin added** (the default): they are taken off every home screen right away (a backup is
+  saved first). Rows users made themselves, or that another plugin added, stay.
+- **Leave them as they are**: the rows stay, but no longer follow the seasons.
+
+### Good to know
+
+- The rows need **Emby Server 4.10** or newer, and apps that support the new home screen. Some older TV apps (for
+  example older Samsung and Android TV versions) don't show these rows yet; updating the app helps.
+- Rows change when the sync runs (daily, or *Run now*), not when you press Save.
+- Costs no API requests: everything happens inside Emby.
+
+---
+
 ## How the nightly sync works
 
 Every run, for every collection:
@@ -621,7 +709,8 @@ The plugin keeps its files in its **data folder**, inside Emby's `plugins` folde
 | `artwork-state.json` | What each collection's poster and backdrop were made from, so unchanged artwork is not uploaded again. |
 | `images/` | Your own posters and backdrops (see [Your own poster or backdrop](#your-own-poster-or-backdrop)). |
 | `previews/` | Posters and backdrops drawn during a dry run. |
-| `backups/` | Backups written by *Delete All Collections*. |
+| `home-rows.json` | Which home screen rows the plugin added or took over, per user, and the Emby ids each collection has had (so a row copied last season is still recognised). **Better not delete:** the plugin would forget which rows users removed, and could add them again. |
+| `backups/` | Backups written by *Delete All Collections*, and each user's home screen before the plugin first changes it on a day. |
 
 The settings themselves are saved by Emby in `plugins/configurations/UltimateCollections.xml`.
 
@@ -685,7 +774,17 @@ colour. Without `poster_tint` the tint is a dark shade of the accent, and withou
 name is used, split over at most two lines. The Poster style popup shows you these colours when you open a
 collection that has none.
 
-**Will it change my movies?** No. It only creates, fills and deletes collections, and sets their artwork.
+**Will it change my movies?** No. It only creates, fills and deletes collections, and sets their artwork (and, if
+you switch it on, adds rows for them to home screens).
+
+**A home screen row doesn't show up.** Check the *Rows right now* table: rows show only while their collection
+exists (in season, with at least `min_items` titles). If it says *Showing* but one user doesn't see it, that user
+probably removed the row (the table counts those), or their app is too old for the new home screen. The log names
+every row it adds, takes over or removes.
+
+**I use Home Screen Companion (or another home screen plugin).** Both can run, but let only one of them manage
+collection rows. If the other plugin copies a home screen to other users, the plugin takes over the copied rows that
+point at its collections, so you don't get them twice; rows for other things are never touched.
 
 **Can I run it more often than once a day?** Yes: add a trigger in Scheduled Tasks. Thanks to the saved lists, extra
 runs cost no API requests until a list is due.

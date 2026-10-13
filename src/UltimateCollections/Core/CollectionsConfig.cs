@@ -149,15 +149,49 @@ namespace UltimateCollections.Core
         // sort the same as dates within a year; when the start is after the end the window wraps.
         public static bool InSeason(string spec, DateTime today)
         {
-            var parts = spec.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != 2)
-                throw new ConfigException($"season needs two dates, e.g. 'season 12-01 12-31' (got '{spec}')");
-            var a = parts[0].Replace("-", "");
-            var b = parts[1].Replace("-", "");
+            var (a, b) = Parse(spec);
             var t = today.ToString("MMdd");
             return string.CompareOrdinal(a, b) <= 0
                 ? string.CompareOrdinal(a, t) <= 0 && string.CompareOrdinal(t, b) <= 0
                 : string.CompareOrdinal(t, a) >= 0 || string.CompareOrdinal(t, b) <= 0;
+        }
+
+        // Start and end as MMDD strings.
+        static (string, string) Parse(string spec)
+        {
+            var parts = spec.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2)
+                throw new ConfigException($"season needs two dates, e.g. 'season 12-01 12-31' (got '{spec}')");
+            return (parts[0].Replace("-", ""), parts[1].Replace("-", ""));
+        }
+
+        // Names one run of a season, e.g. "2026-1201" for the Christmas that starts Dec 1, 2026. Home rows use it to
+        // do something once per season. A window that wraps the new year started last year when we are past January 1.
+        public static string StartKey(string spec, DateTime today)
+        {
+            var (a, _) = Parse(spec);
+            var year = string.CompareOrdinal(today.ToString("MMdd"), a) >= 0 ? today.Year : today.Year - 1;
+            return $"{year}-{a}";
+        }
+
+        // The next day the season is on (today when it is on today), for "Hidden until Dec 1" on the settings page.
+        // Worked out with InSeason itself so the two always agree (a 02-29 start means Mar 1 in other years).
+        public static DateTime NextStart(string spec, DateTime today)
+        {
+            for (var d = today.Date; d < today.Date.AddDays(400); d = d.AddDays(1))
+                if (InSeason(spec, d))
+                    return d;
+            return today.Date.AddYears(1);
+        }
+
+        // "Oct 1 – Oct 31", for the settings page.
+        public static string Describe(string spec)
+        {
+            var (a, b) = Parse(spec);
+            string Day(string mmdd) =>
+                new DateTime(2028, int.Parse(mmdd.Substring(0, 2)), int.Parse(mmdd.Substring(2, 2)))
+                    .ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture);
+            return Day(a) + " – " + Day(b);
         }
     }
 }

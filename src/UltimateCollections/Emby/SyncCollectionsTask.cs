@@ -1,7 +1,8 @@
 // SyncCollectionsTask.cs
 //
 // The scheduled task "Ultimate Collections > Sync collections" (Dashboard > Scheduled Tasks). Daily at 05:00 by
-// default, a quiet hour on most servers; "Run now" there is the manual run. It wires the Core pieces to Emby, runs the Syncer once, and saves state.json and artwork-state.json afterwards. Also home of the two
+// default, a quiet hour on most servers; "Run now" there is the manual run. It wires the Core pieces to Emby, runs the Syncer once,
+// then the home screen rows (when switched on), and saves state.json, artwork-state.json and home-rows.json. Also home of the two
 // small adapters every run needs: EmbyJson and SyncLog.
 //
 // NOTE: a dry run saves nothing (state, artwork state). The only setting it changes is "Download all lists again",
@@ -32,9 +33,10 @@ namespace UltimateCollections.Emby
         readonly IJsonSerializer _jsonSerializer;
         readonly IProviderManager _providers;
         readonly IFileSystem _fileSystem;
+        readonly IUserManager _users;
 
         public SyncCollectionsTask(ILibraryManager library, ICollectionManager collections, ILogManager logManager,
-            IJsonSerializer jsonSerializer, IProviderManager providers, IFileSystem fileSystem)
+            IJsonSerializer jsonSerializer, IProviderManager providers, IFileSystem fileSystem, IUserManager users)
         {
             _library = library;
             _collections = collections;
@@ -42,6 +44,7 @@ namespace UltimateCollections.Emby
             _jsonSerializer = jsonSerializer;
             _providers = providers;
             _fileSystem = fileSystem;
+            _users = users;
         }
 
         // ---- small JSON file helpers (also used by CollectionsApi) ----
@@ -158,13 +161,38 @@ namespace UltimateCollections.Emby
                     artwork.Prune(syncer.State.Values);
                     SaveJson(json, artworkStatePath, artwork.State);
                 }
+
+                // Home screen rows come last, so they see this run's new collection ids. The id history is kept on
+                // every real run, rows on or off, so switching rows on later can still adopt older rows. A failure
+                // here is only a warning: the collections are done by now.
+                var homePath = Path.Combine(dataDir, "home-rows.json");
+                var home = LoadJson<HomeRowsState>(json, homePath).Normalize();
+                if (!conf.DryRun)
+                    home.RecordHistory(syncer.State);
+                var homeNote = "";
+                if (conf.ManageHomeRows)
+                {
+                    try
+                    {
+                        var rows = new HomeRowSync(new EmbyHomeScreens(_users, json, Path.Combine(dataDir, "backups")), home, log)
+                            .Run(cfg, conf.GetHomeRowSettings(), syncer.State, options);
+                        homeNote = $", home rows {rows.Added} added, {rows.Updated} updated, {rows.Adopted} adopted, {rows.Moved} moved, " +
+                                   $"{rows.Removed} removed{(rows.Errors > 0 ? $", {rows.Errors} user(s) failed" : "")}";
+                    }
+                    catch (Exception e)
+                    {
+                        log.Warn($"home rows failed, left as they were: {e.GetType().Name}: {e.Message}");
+                    }
+                }
+                if (!conf.DryRun)
+                    SaveJson(json, homePath, home);
                 if (conf.RefreshNextRun)
                 {
                     conf.RefreshNextRun = false;
                     plugin.SaveConfiguration();
                 }
                 log.Info($"{(conf.DryRun ? "[dry-run] " : "")}done: {result.Created} created, {result.Updated} changed, " +
-                         $"{result.Deleted} deleted, {tmdb.Calls} TMDb request(s), {result.Errors} error(s)");
+                         $"{result.Deleted} deleted, {tmdb.Calls} TMDb request(s), {result.Errors} error(s){homeNote}");
             }
         }
     }

@@ -1,5 +1,5 @@
 <div data-role="page" class="page type-interior pluginConfigurationPage ultimateCollectionsConfigPage"
-     data-require="emby-input,emby-button,emby-checkbox,emby-textarea"
+     data-require="emby-input,emby-button,emby-checkbox,emby-textarea,emby-select,emby-radio"
      data-controller="__plugin/UltimateCollectionsJS">
     <!--
         Settings page of the plugin (embedded resource, see Plugin.GetPages). The script is configPage.js, loaded via
@@ -68,8 +68,87 @@
                         <code>[global]</code> then one <code>[collection NAME]</code> section per collection; keys
                         <code>tmdb_keyword</code>, <code>tmdb_actor</code> (movies only), <code>mdblist</code>, <code>title</code>, <code>release_years</code>,
                         <code>min_rating</code>, <code>min_votes</code>, <code>exclude_genre</code>, <code>exclude_keyword</code>,
-                        <code>tv yes</code>, <code>season MM-DD MM-DD</code>, <code>min_items</code>, <code>max_pages</code>.
+                        <code>tv yes</code>, <code>season MM-DD MM-DD</code>, <code>min_items</code>, <code>max_pages</code>,
+                        <code>home_screen yes|no|spotlight</code>.
                         The README has the full guide with explained examples.
+                    </div>
+                </div>
+
+                <!-- Home screen rows (Core/HomeRows.cs). Off by default; the options show once it is ticked. Switching
+                     it off opens a confirm box (configPage.js) that removes our rows through HomeRowsApi. -->
+                <div class="ucHomeRows" style="margin: 2.5em 0 2em; padding-top: 1.5em; border-top: 1px solid rgba(128,128,128,.3);">
+                    <h2 class="sectionTitle">Home screen rows</h2>
+                    <p class="fieldDescription">
+                        Shows collections as rows on your users' home screens (Emby 4.10 or newer). Seasonal rows appear when
+                        their season starts and hide when it ends, in the spot each user gave them. Rows change when the sync
+                        task runs.
+                    </p>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="ucManageHomeRows" />
+                            <span>Manage home screen rows</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Off by default. Using another plugin for home
+                            screens (for example Home Screen Companion)? Let only one of them manage collection rows, or users
+                            may see a row twice.</div>
+                    </div>
+
+                    <div class="ucHomeOptions" style="margin-left: 2.2em;">
+                        <h3 style="margin: 1.2em 0 .6em; font-weight: 500;">Which users</h3>
+                        <label class="radio-label-block"><input type="radio" is="emby-radio" name="ucHomeUsers" value="all" id="ucHomeUsersAll" /><span>All users, including users added later</span></label>
+                        <label class="radio-label-block"><input type="radio" is="emby-radio" name="ucHomeUsers" value="chosen" id="ucHomeUsersChosen" /><span>Only these users</span></label>
+                        <div class="ucUserPick" style="margin: .4em 0 1em 2.2em;">
+                            <div style="display: flex; gap: 1.5em; margin-bottom: .4em;">
+                                <button is="emby-button" type="button" class="ucUsersAll" style="margin: 0; padding: .2em 0;"><span>Select all</span></button>
+                                <button is="emby-button" type="button" class="ucUsersNone" style="margin: 0; padding: .2em 0;"><span>Select none</span></button>
+                            </div>
+                            <div class="ucUserList">Loading users...</div>
+                            <div class="fieldDescription">New users are not added automatically in this mode.</div>
+                        </div>
+
+                        <div style="display: flex; flex-wrap: wrap; gap: 0 2em; margin-top: 1em;">
+                            <div class="selectContainer" style="flex: 1 1 18em;">
+                                <select is="emby-select" id="ucHomeRowStyle" label="Default style">
+                                    <option value="cards">Cards (a row of posters)</option>
+                                    <option value="spotlight">Spotlight (big banner)</option>
+                                </select>
+                                <div class="fieldDescription">A collection can change it with <code>home_screen spotlight</code>. Only one spotlight shows at a time.</div>
+                            </div>
+                            <div class="selectContainer" style="flex: 1 1 18em;">
+                                <select is="emby-select" id="ucHomeRowPosition" label="Where new rows go">
+                                    <option value="after">After Continue Watching / Next Up</option>
+                                    <option value="top">At the top</option>
+                                    <option value="bottom">At the bottom</option>
+                                </select>
+                                <div class="fieldDescription">Only when a row is first added. If a user moves it, it stays where they put it.</div>
+                            </div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="ucHomeRowSpotlightTop" />
+                                <span>Move a seasonal spotlight to the top when its season starts</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">The web app shows the first row as a full-screen
+                                banner (TV apps show a banner row). Users can move it down again; it moves up once per season and
+                                to the bottom when the season ends.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="ucHomeRowSeasonal" />
+                                <span>Seasonal collections get a row automatically</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Other collections get one only with
+                                <code>home_screen yes</code>; <code>home_screen no</code> keeps a seasonal one off the home screen.</div>
+                        </div>
+
+                        <h3 style="margin: 1.2em 0 .4em; font-weight: 500;">Rows right now</h3>
+                        <div class="fieldDescription" style="margin-bottom: .6em;">From the saved settings. Updates after Save and on each run.</div>
+                        <div class="ucHomeTable" style="overflow-x: auto;"></div>
+                        <div class="ucHomeNotes"></div>
+                        <div class="fieldDescription" style="margin-top: .6em;">Hidden rows stay on each home screen while empty (Emby
+                            doesn't show empty rows) and come back in the same spot next season. A user who removes a row doesn't
+                            get it back.</div>
                     </div>
                 </div>
 

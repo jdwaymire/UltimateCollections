@@ -14,6 +14,7 @@ using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
+using UltimateCollections.Core;
 
 namespace UltimateCollections
 {
@@ -106,5 +107,29 @@ namespace UltimateCollections
 
         // Comma-separated collection names: sync only these (empty = all). Handy while building one collection.
         public string OnlyCollections { get; set; } = "";
+
+        // ---- home screen rows (Core/HomeRows.cs) ----
+
+        // Off by default, on fresh installs and upgrades alike: the server may already use another plugin for home
+        // screens (decided 2026-10-12). Switching it off goes through HomeRowsApi, which removes our rows first.
+        public bool ManageHomeRows { get; set; }
+
+        // "all", or comma-separated Emby user ids.
+        public string HomeRowUsers { get; set; } = "all";
+
+        // cards | spotlight
+        public string HomeRowStyle { get; set; } = "cards";
+
+        // after (Continue Watching) | top | bottom; only where a new row goes.
+        public string HomeRowPosition { get; set; } = "after";
+
+        // Seasonal collections get a row without home_screen yes.
+        public bool HomeRowSeasonal { get; set; } = true;
+
+        // Move a seasonal spotlight to the top when its season starts (full-screen banner in the web app).
+        public bool HomeRowSpotlightTop { get; set; }
+
+        public HomeRowSettings GetHomeRowSettings() =>
+            HomeRowSettings.From(HomeRowUsers, HomeRowStyle, HomeRowPosition, HomeRowSeasonal, HomeRowSpotlightTop);
     }
 }
