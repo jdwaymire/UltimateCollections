@@ -548,6 +548,9 @@ The pictures are kept in the plugin's `images/` folder, named after the collecti
 (capitals, spaces and punctuation don't matter), so `valentines_day.jpg` belongs to *Valentine's Day*. A file that
 isn't a usable JPEG or PNG is skipped with a warning in the log, and the collection keeps the picture it has.
 
+**Unused images.** When the folder holds pictures no collection uses (the collection was renamed or removed, or two
+files belong to the same poster), the popup lists them at the top with a **Delete unused images** button.
+
 ---
 
 ## Home screen rows
@@ -623,6 +626,14 @@ Untick **Manage home screen rows**. A box asks what to do with the rows:
 - **Remove the rows the plugin added** (the default): they are taken off every home screen right away (a backup is
   saved first). Rows users made themselves, or that another plugin added, stay.
 - **Leave them as they are**: the rows stay, but no longer follow the seasons.
+
+### Orphaned rows
+
+A row whose collection no longer exists (left behind by *Leave them as they are*, or a collection that was deleted)
+is hidden by Emby, but it stays in the user's home screen settings, and an empty first row stops the next one from
+showing as a full-screen spotlight. The **Orphaned rows** part of the section counts and lists them on every user's
+home screen, and **Clear orphaned rows** removes them (a backup is saved first). It works whether or not the plugin
+manages rows; while it does, its own rows waiting for next season are kept.
 
 ### Good to know
 
@@ -737,6 +748,10 @@ copy, a fresh download (and why: `new`, `sources changed`, `weekly refresh` or `
 
 **The task fails right away.** Open the log: a settings error names the line or collection (for example
 `line 12: setting outside a section` or `collection 'X' has no source`). A missing TMDb token also stops the run.
+
+**"TMDb refused the token (HTTP 401 Unauthorized)".** The token field holds the shorter **API Key** instead of the
+long **API Read Access Token** (starts with `eyJ`), or the token was regenerated on TMDb. Copy the Read Access Token
+from themoviedb.org > Settings > API again. The run stops asking TMDb after the first refusal.
 
 **"TMDb keyword 'xyz' not found (close: ...)".** The keyword name must match TMDb exactly. Pick one of the names in
 the brackets, or use the keyword's numeric id from its TMDb page.

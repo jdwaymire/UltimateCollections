@@ -1,15 +1,16 @@
 // HomeRowsApi.cs
 //
-// The two REST routes behind the settings page's "Home screen rows" section: the "Rows right now" table, and
-// switching the feature off (remove our rows from every home screen, or leave them). The rules are in
-// Core/HomeRows.cs.
+// The REST routes behind the settings page's "Home screen rows" section: the "Rows right now" table, switching the
+// feature off (remove our rows from every home screen, or leave them), and counting / clearing orphaned rows (rows
+// whose collection is gone). The rules are in Core/HomeRows.cs.
 //
-// NOTE: both routes are admin only. SwitchOff also saves ManageHomeRows = false itself, so the setting and the
+// NOTE: all routes are admin only. SwitchOff also saves ManageHomeRows = false itself, so the setting and the
 // home screens never disagree (a page left unsaved would otherwise let the next run add every row back).
 
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Logging;
@@ -45,15 +46,37 @@ namespace UltimateCollections.Emby
         public int Removed { get; set; }
     }
 
+    [Route("/UltimateCollections/HomeRows/Orphans", "GET", Summary = "Collection rows on home screens whose collection no longer exists")]
+    [Authenticated(Roles = "Admin")]
+    public class HomeRowsOrphansRequest : IReturn<HomeRowsOrphansView>
+    {
+    }
+
+    [Route("/UltimateCollections/HomeRows/ClearOrphans", "POST", Summary = "Remove the rows whose collection no longer exists")]
+    [Authenticated(Roles = "Admin")]
+    public class HomeRowsClearOrphansRequest : IReturn<HomeRowsSwitchOffResult>
+    {
+    }
+
+    public class HomeRowsOrphansView
+    {
+        public int Count { get; set; }
+        public int Users { get; set; }
+        // "Ronnie: Halloween" lines for the page, so the admin sees what goes before pressing the button.
+        public List<string> Rows { get; set; } = new List<string>();
+    }
+
     public class HomeRowsApi : IService
     {
         readonly IUserManager _users;
+        readonly ILibraryManager _library;
         readonly ILogger _logger;
         readonly IJsonSerializer _jsonSerializer;
 
-        public HomeRowsApi(IUserManager users, ILogManager logManager, IJsonSerializer jsonSerializer)
+        public HomeRowsApi(IUserManager users, ILibraryManager library, ILogManager logManager, IJsonSerializer jsonSerializer)
         {
             _users = users;
+            _library = library;
             _logger = logManager.GetLogger("UltimateCollections");
             _jsonSerializer = jsonSerializer;
         }
@@ -116,5 +139,65 @@ namespace UltimateCollections.Emby
                 Plugin.WorkLock.Release();
             }
         }
+
+        // ---- orphaned rows ----
+
+        public object Get(HomeRowsOrphansRequest request)
+        {
+            var orphans = Orphans(new EmbyJson(_jsonSerializer), new ServerLog(_logger))
+                .FindOrphans(Exists, Cfg(), Plugin.Instance.Configuration.GetHomeRowSettings());
+            return new HomeRowsOrphansView
+            {
+                Count = orphans.Count,
+                Users = orphans.Select(o => o.UserId).Distinct().Count(),
+                Rows = orphans.Select(o => $"{o.User}: {o.Name ?? "(no name)"}").ToList(),
+            };
+        }
+
+        // Under the work lock, like SwitchOff, so a sync never re-points a row while we decide it is dead. Nothing
+        // is saved: only untracked rows are removed, so home-rows.json does not change.
+        public object Post(HomeRowsClearOrphansRequest request)
+        {
+            if (!Plugin.WorkLock.Wait(0))
+                throw new InvalidOperationException("A collection sync is running right now. Try again when it has finished.");
+            try
+            {
+                var json = new EmbyJson(_jsonSerializer);
+                using (var log = new SyncLog(_logger, Path.Combine(DataDir, "logs")))
+                {
+                    var removed = Orphans(json, log).ClearOrphans(Exists, Cfg(), Plugin.Instance.Configuration.GetHomeRowSettings());
+                    return new HomeRowsSwitchOffResult { Removed = removed };
+                }
+            }
+            finally
+            {
+                Plugin.WorkLock.Release();
+            }
+        }
+
+        HomeRowSync Orphans(EmbyJson json, ISyncLog log)
+        {
+            var state = SyncCollectionsTask.LoadJson<HomeRowsState>(json, Path.Combine(DataDir, "home-rows.json")).Normalize();
+            return new HomeRowSync(new EmbyHomeScreens(_users, json, Path.Combine(DataDir, "backups")), state, log);
+        }
+
+        // The config for FindOrphans' "keep what the next run needs" rules: only while home rows are on (null = off).
+        // A broken saved text is refused rather than treated as off: that would clear rows a fixed text would keep.
+        CollectionsConfig Cfg()
+        {
+            var conf = Plugin.Instance.Configuration;
+            if (!conf.ManageHomeRows)
+                return null;
+            try
+            {
+                return ConfigParser.Parse(conf.CollectionsText);
+            }
+            catch (ConfigException e)
+            {
+                throw new InvalidOperationException("The saved collections text has an error, fix it first: " + e.Message);
+            }
+        }
+
+        bool Exists(long id) => _library.GetItemById(id) != null;
     }
 }

@@ -4,7 +4,7 @@
  * Controller for the plugin's settings page (configPage.html). Loads and saves PluginConfiguration, runs the
  * "Poster style" popup (colour pickers with a server-drawn preview that write the poster_* lines into the text), the
  * "Custom images" popup (upload/remove the user's own posters and backdrops), the "Home screen rows" section (users,
- * the rows table, the switch-off confirm box) and drives the "Delete All Collections" danger zone.
+ * the rows table, the switch-off confirm box, orphaned rows) and drives the "Delete All Collections" danger zone.
  *
  * NOTE: pluginId must match the GUID in Plugin.cs, and the keys of `fields` must match the PluginConfiguration
  * property names exactly. A misspelt key fails quietly: that setting just never loads or saves.
@@ -32,6 +32,13 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
     // HomeRowUsers is not in `fields`: it is the radio pair plus the user checklist (see readUsers / showUsers).
 
     var confirmWord = 'DELETE';
+
+    // The usual token mistake is pasting the 32-character hex "API Key"; TMDb answers 401 to it. The Read Access
+    // Token is a long JWT, so the shape is enough to tell them apart without asking TMDb.
+    function checkToken(view) {
+        var v = view.querySelector('#ucTmdbToken').value.trim();
+        view.querySelector('.ucTokenWarn').style.display = /^[0-9a-f]{32}$/i.test(v) ? '' : 'none';
+    }
 
     // Fills in how many collections a delete would remove, so the user sees the size of it before typing DELETE.
     function showCount(view) {
@@ -401,6 +408,9 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         '.ucSmallBtn:hover{border-color:#52b54b}' +
         '.ucSmallBtn[disabled]{opacity:.4;cursor:default}' +
         '.ucImgDlg .formDialogFooter{display:flex;justify-content:flex-end;gap:.8em;padding:1em 1.5em}' +
+        '.ucUnused{margin:.4em 0 .6em;padding:.7em .9em;border-radius:4px;background:rgba(224,154,43,.12);font-size:.9em;line-height:1.45}' +
+        '.ucUnused ul{margin:.4em 0 .6em;padding-left:1.4em;max-height:9em;overflow-y:auto}' +
+        '.ucUnused li span{opacity:.7}' +
         '</style>' +
         '<div class="formDialogHeader">' +
         '  <button is="paper-icon-button-light" class="btnCancel autoSize" tabindex="-1" title="Close"><i class="md-icon">close</i></button>' +
@@ -411,6 +421,7 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         '  JPEG or PNG, up to 10 MB; best at 1000x1500 for posters and 1920x1080 for backdrops. The frames show how Emby\'s apps ' +
         '  crop the picture; hover or tap one to see the whole image. Changes reach the collections on the next sync ' +
         '  (Scheduled Tasks &gt; Sync collections &gt; Run now). Remove a custom image to go back to the generated one.</p>' +
+        '  <div class="ucUnused" style="display:none"></div>' +
         '  <div class="ucImgRows">Loading...</div>' +
         '</div>' +
         '<div class="formDialogFooter">' +
@@ -558,6 +569,7 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
                         postJson('UltimateCollections/CustomImages/Delete', { Name: name, Backdrop: backdrop }).then(function (r) {
                             renderSlot(slotEl, name, backdrop, backdrop ? r.Backdrop : r.Poster);
                             toast(name + ': custom ' + (backdrop ? 'backdrop' : 'poster') + ' removed. The generated one comes back on the next sync.');
+                            loadUnused();
                         }, function (err) {
                             busy(slotEl, false);
                             errorText(err).then(toast);
@@ -569,6 +581,39 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
             function busy(slotEl, on) {
                 Array.prototype.forEach.call(slotEl.querySelectorAll('button'), function (b) { b.disabled = on; });
                 slotEl.style.opacity = on ? 0.5 : '';
+            }
+
+            // Files in images/ that no collection uses (left over from a renamed or removed collection, or extra
+            // copies), listed by name above the collections with one button to delete them all. Hidden when there are
+            // none. The server works the list out again on delete, so it never deletes from a stale list.
+            var names = sections.map(function (s) { return s.name; });
+            var unusedBox = dlg.querySelector('.ucUnused');
+            function loadUnused() {
+                postJson('UltimateCollections/CustomImages/Unused', { Names: names.join('\n') }).then(function (list) {
+                    list = list || [];
+                    if (!list.length) {
+                        unusedBox.style.display = 'none';
+                        return;
+                    }
+                    var n = list.length, files = n === 1 ? 'image' : 'images';
+                    unusedBox.innerHTML = '<b>' + n + ' unused ' + files + '</b> in the images folder (no collection uses ' +
+                        (n === 1 ? 'it' : 'them') + '):<ul>' + list.map(function (u) {
+                            return '<li>' + escapeHtml(u.FileName) + ' <span>(' + escapeHtml(u.Reason) + ')</span></li>';
+                        }).join('') + '</ul><button type="button" class="ucSmallBtn ucDelUnused">Delete ' + n + ' unused ' + files + '</button>';
+                    unusedBox.style.display = '';
+                    unusedBox.querySelector('.ucDelUnused').addEventListener('click', function () {
+                        this.disabled = true;
+                        postJson('UltimateCollections/CustomImages/DeleteUnused', { Names: names.join('\n') }).then(function (r) {
+                            toast(r.Deleted + ' unused image' + (r.Deleted === 1 ? '' : 's') + ' deleted.');
+                            loadUnused();
+                        }, function (err) {
+                            errorText(err).then(toast);
+                            loadUnused();
+                        });
+                    });
+                }, function () {
+                    unusedBox.style.display = 'none';
+                });
             }
 
             // Upload: checked here for size first (no point sending 40 MB to be refused), then sent as base64; the
@@ -590,6 +635,7 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
                     postJson('UltimateCollections/CustomImages/Upload', { Name: t.name, Backdrop: t.backdrop, Data: data }).then(function (r) {
                         renderSlot(t.el, t.name, t.backdrop, t.backdrop ? r.Backdrop : r.Poster);
                         toast(t.name + ': custom ' + (t.backdrop ? 'backdrop' : 'poster') + ' saved. It is put on the collection on the next sync.');
+                        loadUnused();
                     }, function (err) {
                         busy(t.el, false);
                         errorText(err).then(toast);
@@ -606,7 +652,6 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
             dlg.querySelector('.ucCancel').addEventListener('click', function () { dialogHelper.close(dlg); });
             dialogHelper.open(dlg);
 
-            var names = sections.map(function (s) { return s.name; });
             postJson('UltimateCollections/CustomImages/List', { Names: names.join('\n') }).then(function (list) {
                 var byName = {};
                 (list || []).forEach(function (x) { byName[x.Name] = x; });
@@ -623,6 +668,7 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
                     renderSlot(row.querySelector('.ucSlotBackdrop'), name, true, x.Backdrop);
                     rows.appendChild(row);
                 });
+                loadUnused();
             }, function (err) {
                 errorText(err).then(function (t) { rows.textContent = 'Could not load the custom images: ' + t; });
             });
@@ -765,6 +811,7 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
                     done();
                     toast(remove ? 'Home screen rows switched off; ' + r.Removed + ' row(s) removed.' : 'Home screen rows switched off; the rows were left as they are.');
                     loadHomeTable(view);
+                    loadOrphans(view);
                 }, function (err) {
                     loading.hide();
                     errorText(err).then(toast);
@@ -774,6 +821,48 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         });
     }
 
+    // The "Orphaned rows" count and list, and the button that clears them. A backup of each user's home screen is
+    // saved by the server before it changes one (backups/), like every other home screen change.
+    function loadOrphans(view) {
+        var count = view.querySelector('.ucOrphanCount');
+        var list = view.querySelector('.ucOrphanList');
+        var button = view.querySelector('#ucClearOrphans');
+        button.disabled = true;
+        ApiClient.getJSON(ApiClient.getUrl('UltimateCollections/HomeRows/Orphans')).then(function (r) {
+            list.innerHTML = '';
+            (r.Rows || []).forEach(function (x) {
+                var li = document.createElement('li');
+                li.textContent = x;
+                list.appendChild(li);
+            });
+            count.textContent = r.Count
+                ? r.Count + ' orphaned row' + (r.Count === 1 ? '' : 's') + ' on ' + r.Users + ' user' + (r.Users === 1 ? "'s" : "s'") + ' home screens:'
+                : 'No orphaned rows.';
+            button.querySelector('span').textContent = 'Clear orphaned rows (' + r.Count + ')';
+            button.disabled = !r.Count;
+        }, function (err) {
+            list.innerHTML = '';
+            button.querySelector('span').textContent = 'Clear orphaned rows';
+            errorText(err).then(function (t) { count.textContent = 'Could not count the orphaned rows: ' + t; });
+        });
+    }
+
+    function clearOrphans(view) {
+        require(['toast'], function (toast) {
+            toast = toast.default || toast;
+            view.querySelector('#ucClearOrphans').disabled = true;
+            loading.show();
+            postJson('UltimateCollections/HomeRows/ClearOrphans', {}).then(function (r) {
+                loading.hide();
+                toast(r.Removed + ' orphaned row' + (r.Removed === 1 ? '' : 's') + ' removed.');
+                loadOrphans(view);
+            }, function (err) {
+                loading.hide();
+                errorText(err).then(toast);
+                loadOrphans(view);
+            });
+        });
+    }
 
     function View(view, params) {
         BaseView.apply(this, arguments);
@@ -784,6 +873,8 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
         view.querySelector('#ucCustomImages').addEventListener('click', function () {
             openCustomImages(view);
         });
+        view.querySelector('#ucTmdbToken').addEventListener('input', function () { checkToken(view); });
+        view.querySelector('#ucClearOrphans').addEventListener('click', function () { clearOrphans(view); });
 
         // homeSaved = whether rows are on in the SAVED settings; only then does unticking need the confirm box.
         var self = this;
@@ -858,6 +949,7 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
                 self.homeSaved = view.querySelector('#ucManageHomeRows').checked;
                 Dashboard.processPluginConfigurationUpdateResult(result);
                 loadHomeTable(view);
+                loadOrphans(view);
             });
             return false;
         });
@@ -887,8 +979,10 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
                 }
             });
             self.homeSaved = !!config.ManageHomeRows;
+            checkToken(view);
             showUsers(view, config.HomeRowUsers);
             loadHomeTable(view);
+            loadOrphans(view);
             loading.hide();
         });
     };

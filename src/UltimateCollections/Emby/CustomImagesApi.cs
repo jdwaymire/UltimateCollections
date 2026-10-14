@@ -1,7 +1,7 @@
 // CustomImagesApi.cs
 //
 // The REST routes behind the settings page's "Custom images" popup: list which collections have their own poster or
-// backdrop (with a small thumbnail), upload one, remove one. The files live in the plugin's images/ folder; the real
+// backdrop (with a small thumbnail), upload one, remove one, and delete the files no collection uses. The files live in the plugin's images/ folder; the real
 // work is in Core/CustomImages. Nothing is set on a collection here: the next sync picks the change up.
 //
 // NOTE: admin only, like the other routes. The page only ever sends a collection name, never a path or file name;
@@ -46,6 +46,32 @@ namespace UltimateCollections.Emby
     {
         public string Name { get; set; }
         public bool Backdrop { get; set; }
+    }
+
+    [Route("/UltimateCollections/CustomImages/Unused", "POST", Summary = "Image files no collection uses")]
+    [Authenticated(Roles = "Admin")]
+    public class CustomImagesUnusedRequest : IReturn<List<UnusedImageView>>
+    {
+        // The collection names in the page's text box, one per line; the saved settings' names are added on this side.
+        public string Names { get; set; }
+    }
+
+    [Route("/UltimateCollections/CustomImages/DeleteUnused", "POST", Summary = "Delete the image files no collection uses")]
+    [Authenticated(Roles = "Admin")]
+    public class CustomImagesDeleteUnusedRequest : IReturn<CustomImagesDeleteUnusedResult>
+    {
+        public string Names { get; set; }
+    }
+
+    public class UnusedImageView
+    {
+        public string FileName { get; set; }
+        public string Reason { get; set; }
+    }
+
+    public class CustomImagesDeleteUnusedResult
+    {
+        public int Deleted { get; set; }
     }
 
     public class CustomImageSlots
@@ -163,6 +189,38 @@ namespace UltimateCollections.Emby
             var n = Images.Delete(name, request.Backdrop);
             _logger.Info("[{0}] custom {1} removed ({2} file(s))", name, request.Backdrop ? "backdrop" : "poster", n);
             return Slots(name);
+        }
+
+        public object Post(CustomImagesUnusedRequest request) =>
+            Images.Unused(InUse(request.Names)).Select(u => new UnusedImageView { FileName = u.FileName, Reason = u.Reason }).ToList();
+
+        // Worked out again here rather than taken from the page, so only files that are unused right now can go.
+        public object Post(CustomImagesDeleteUnusedRequest request)
+        {
+            var n = 0;
+            foreach (var u in Images.Unused(InUse(request.Names)))
+            {
+                File.Delete(u.Path);
+                _logger.Info("unused custom image deleted: {0} ({1})", u.FileName, u.Reason);
+                n++;
+            }
+            return new CustomImagesDeleteUnusedResult { Deleted = n };
+        }
+
+        // The page's names plus the saved settings' names. Both, so neither an image uploaded for a collection that is
+        // only typed in (not saved yet) nor one for a saved collection the page has just lost counts as unused.
+        // A saved text that does not parse adds nothing; the page's names still count.
+        static IEnumerable<string> InUse(string pageNames)
+        {
+            var names = (pageNames ?? "").Split('\n').Select(n => n.Trim()).Where(n => n.Length > 0).ToList();
+            try
+            {
+                names.AddRange(ConfigParser.Parse(Plugin.Instance.Configuration.CollectionsText).Collections.Select(c => c.Name));
+            }
+            catch (ConfigException)
+            {
+            }
+            return names;
         }
 
         static string Name(string name)

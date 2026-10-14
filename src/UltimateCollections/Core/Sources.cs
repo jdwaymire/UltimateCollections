@@ -88,7 +88,7 @@ namespace UltimateCollections.Core
                             continue;
                         }
                         if (!resp.IsSuccessStatusCode)
-                            throw new HttpRequestException($"HTTP {code} for {Redact(url)}");
+                            throw new HttpStatusException(code, $"HTTP {code} {resp.ReasonPhrase} for {Redact(url)}");
                         return await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                     }
                 }
@@ -101,6 +101,21 @@ namespace UltimateCollections.Core
             var q = url.IndexOf('?');
             return q < 0 ? url : url.Substring(0, q);
         }
+    }
+
+    // An error answer from the server (not a network failure), with its status code, so a caller can tell a refused
+    // token (401) from the rest.
+    public class HttpStatusException : HttpRequestException
+    {
+        public int Code { get; }
+
+        public HttpStatusException(int code, string message) : base(message) => Code = code;
+    }
+
+    // TMDb said no to the token. Thrown for every request after the first refusal too, without asking TMDb again.
+    public class TmdbTokenException : InvalidOperationException
+    {
+        public TmdbTokenException(string message) : base(message) { }
     }
 
     // ---- TMDb / MDBList DTOs ----
@@ -136,6 +151,15 @@ namespace UltimateCollections.Core
         // Where notes about incomplete downloads go (the sync log); may be null.
         public Action<string> Warn { get; set; }
 
+        // Set once TMDb refuses the token (HTTP 401): the message for the log. The run then makes no more TMDb requests.
+        public string Refused { get; private set; }
+
+        // NOTE: the usual cause is the 32-character "API Key" pasted instead of the "API Read Access
+        // Token". We send the token as a Bearer header, and TMDb answers 401 to a key sent that way.
+        public const string RefusedMessage = "TMDb refused the token (HTTP 401 Unauthorized). Use the \"API Read Access Token\" " +
+            "(the long one, starting with eyJ), not the shorter \"API Key\"; both are on themoviedb.org > Settings > API. " +
+            "If it already is the Read Access Token, it may have been regenerated there: copy it again";
+
         public TmdbClient(Http http, IJson json, string token)
         {
             _http = http;
@@ -144,16 +168,28 @@ namespace UltimateCollections.Core
         }
 
         // Every TMDb request goes through here: waits out the 250 ms gap, counts the call, builds the query string.
+        // After a 401 it throws straight away: a refused token stays refused, so asking again only costs requests.
         async Task<T> GetAsync<T>(string path, IEnumerable<KeyValuePair<string, string>> query, CancellationToken ct)
         {
+            if (Refused != null)
+                throw new TmdbTokenException(Refused);
             var wait = MinInterval - (DateTime.UtcNow - _last);
             if (wait > TimeSpan.Zero)
                 await Task.Delay(wait, ct).ConfigureAwait(false);
             _last = DateTime.UtcNow;
             Calls++;
             var q = string.Join("&", query.Select(kv => Uri.EscapeDataString(kv.Key) + "=" + Uri.EscapeDataString(kv.Value)));
-            var body = await _http.GetAsync("https://api.themoviedb.org" + path + (q.Length > 0 ? "?" + q : ""), _headers, ct)
-                .ConfigureAwait(false);
+            string body;
+            try
+            {
+                body = await _http.GetAsync("https://api.themoviedb.org" + path + (q.Length > 0 ? "?" + q : ""), _headers, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (HttpStatusException e) when (e.Code == 401)
+            {
+                Refused = RefusedMessage;
+                throw new TmdbTokenException(Refused);
+            }
             return _json.Deserialize<T>(body);
         }
 

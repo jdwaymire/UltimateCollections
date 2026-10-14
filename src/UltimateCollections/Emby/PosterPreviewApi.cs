@@ -150,17 +150,5 @@ namespace UltimateCollections.Emby
         static HashSet<long> Set(List<long> ids) => new HashSet<long>(ids ?? new List<long>());
 
         static List<LibraryItem> Pick(List<LibraryItem> items, HashSet<long> ids) => items.Where(i => ids.Contains(i.Id)).ToList();
-
-        // ListCache wants a log for a broken saved file; here that only needs to reach the server log.
-        sealed class ServerLog : ISyncLog
-        {
-            readonly ILogger _logger;
-
-            public ServerLog(ILogger logger) => _logger = logger;
-
-            public void Info(string message) => _logger.Info("{0}", message);
-            public void Warn(string message) => _logger.Warn("{0}", message);
-            public void Error(string message) => _logger.Error("{0}", message);
-        }
     }
 }

@@ -27,6 +27,14 @@ namespace UltimateCollections.Core
         public long Bytes { get; set; }
     }
 
+    // A file in images/ that no collection uses, and why.
+    public sealed class UnusedImage
+    {
+        public string Path { get; set; }
+        public string FileName { get; set; }
+        public string Reason { get; set; }
+    }
+
     public class CustomImages
     {
         // Big enough for any sensible poster or backdrop, small enough that a mistake (a 60 MB photo) is refused.
@@ -148,6 +156,41 @@ namespace UltimateCollections.Core
             foreach (var f in files)
                 File.Delete(f);
             return files.Count;
+        }
+
+        // ---- unused files (the popup's "Delete unused images") ----
+
+        // Image files the sync never uses: ones whose name matches none of these collections' poster or backdrop, and
+        // the extra copies in a slot that has more than one (the sync takes the first by name, see Matches). Sorted by
+        // file name. Non-image files are left out: we only clean up what we would read.
+        public List<UnusedImage> Unused(IEnumerable<string> collections)
+        {
+            var result = new List<UnusedImage>();
+            if (!Directory.Exists(Dir))
+                return result;
+            var slots = new HashSet<string>();
+            foreach (var n in collections.Select(Normalize).Where(n => n.Length > 0))
+            {
+                slots.Add(n);
+                slots.Add(n + BackdropSuffix);
+            }
+            var files = Directory.GetFiles(Dir)
+                .Where(f => Extensions.Contains(System.IO.Path.GetExtension(f).ToLowerInvariant()))
+                .OrderBy(f => System.IO.Path.GetFileName(f), StringComparer.Ordinal);
+            foreach (var g in files.GroupBy(f => Normalize(System.IO.Path.GetFileNameWithoutExtension(f))))
+            {
+                var list = g.ToList();
+                if (!slots.Contains(g.Key))
+                    result.AddRange(list.Select(f => new UnusedImage { Path = f, FileName = System.IO.Path.GetFileName(f), Reason = "no collection with this name" }));
+                else
+                    result.AddRange(list.Skip(1).Select(f => new UnusedImage
+                    {
+                        Path = f,
+                        FileName = System.IO.Path.GetFileName(f),
+                        Reason = $"extra copy, {System.IO.Path.GetFileName(list[0])} is used",
+                    }));
+            }
+            return result.OrderBy(u => u.FileName, StringComparer.Ordinal).ToList();
         }
 
         // ---- thumbnails (the popup) ----

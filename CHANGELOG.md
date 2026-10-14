@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.1 (2026-10-14)
+
+### Clean-up buttons and a clearer TMDb token error
+
+- **Delete unused images** in the *Custom images* popup: shows how many image files in the plugin's `images/` folder
+  no collection uses (left over from a renamed or removed collection, or extra copies of the same poster), lists
+  them, and deletes them with one button.
+- **Clear orphaned rows** in the *Home screen rows* section: counts and lists collection rows on your users' home
+  screens whose collection no longer exists, and removes them with one button. Emby hides these empty rows, but they
+  stay in each user's home screen settings and an empty first row stops a spotlight from showing full-screen. Works
+  whether or not the plugin manages home screen rows; while it does, its own rows waiting for next season are kept.
+  Each user's home screen is backed up first.
+- **Clearer TMDb error:** a refused token now says *"TMDb refused the token (HTTP 401 Unauthorized)"* and explains
+  to use the **API Read Access Token**, not the shorter API Key. After the first refusal the run stops asking TMDb
+  and ends with one clear error line. The token field also warns when what you pasted looks like the API Key.
+
 ## 1.2.0 (2026-10-12)
 
 ### Home screen rows: collections on your users' home screens

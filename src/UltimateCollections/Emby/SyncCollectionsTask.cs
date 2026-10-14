@@ -2,8 +2,8 @@
 //
 // The scheduled task "Ultimate Collections > Sync collections" (Dashboard > Scheduled Tasks). Daily at 05:00 by
 // default, a quiet hour on most servers; "Run now" there is the manual run. It wires the Core pieces to Emby, runs the Syncer once,
-// then the home screen rows (when switched on), and saves state.json, artwork-state.json and home-rows.json. Also home of the two
-// small adapters every run needs: EmbyJson and SyncLog.
+// then the home screen rows (when switched on), and saves state.json, artwork-state.json and home-rows.json. Also home of the
+// small adapters: EmbyJson, SyncLog and ServerLog.
 //
 // NOTE: a dry run saves nothing (state, artwork state). The only setting it changes is "Download all lists again",
 // which is a one-shot and is switched off after any run.
@@ -186,6 +186,10 @@ namespace UltimateCollections.Emby
                 }
                 if (!conf.DryRun)
                     SaveJson(json, homePath, home);
+                // Repeated once at the end, so a refused token is not lost among the per-collection lines (collections
+                // with a saved list keep working from it, which makes the problem easy to miss).
+                if (tmdb.Refused != null)
+                    log.Error("ERROR: " + tmdb.Refused);
                 if (conf.RefreshNextRun)
                 {
                     conf.RefreshNextRun = false;
@@ -253,5 +257,18 @@ namespace UltimateCollections.Emby
         }
 
         public void Dispose() => _file.Dispose();
+    }
+
+    // Server log only, for the page's read-only routes (a broken saved list in the poster preview, an unreadable home
+    // screen while counting orphans). NOTE: not SyncLog: its file is held open by a running sync.
+    public sealed class ServerLog : ISyncLog
+    {
+        readonly ILogger _logger;
+
+        public ServerLog(ILogger logger) => _logger = logger;
+
+        public void Info(string message) => _logger.Info("{0}", message);
+        public void Warn(string message) => _logger.Warn("{0}", message);
+        public void Error(string message) => _logger.Error("{0}", message);
     }
 }

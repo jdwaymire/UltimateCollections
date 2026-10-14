@@ -21,6 +21,9 @@
                     <input is="emby-input" type="password" id="ucTmdbToken" label="TMDb read access token (v4):" autocomplete="off" />
                     <div class="fieldDescription">themoviedb.org &gt; Settings &gt; API &gt; "API Read Access Token" (free).
                         This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
+                    <div class="ucTokenWarn fieldDescription" style="display: none; color: #e09a2b;">This looks like the
+                        32-character <b>API Key</b>. TMDb refuses it here (HTTP 401 Unauthorized): use the <b>API Read Access
+                        Token</b>, the long one starting with <code>eyJ</code>.</div>
                 </div>
 
                 <div class="checkboxContainer checkboxContainer-withDescription">
@@ -150,6 +153,17 @@
                             doesn't show empty rows) and come back in the same spot next season. A user who removes a row doesn't
                             get it back.</div>
                     </div>
+
+                    <!-- Shown whether or not the plugin manages rows: orphans are most often left by switching it off with
+                         "Leave them", or by a collection deleted while someone had a row for it. -->
+                    <h3 style="margin: 1.6em 0 .4em; font-weight: 500;">Orphaned rows</h3>
+                    <div class="fieldDescription" style="margin-bottom: .6em;">Collection rows on any user's home screen whose
+                        collection no longer exists. Emby hides them, but they stay in each user's home screen settings, and an
+                        empty first row stops the next one from showing as a full-screen spotlight. While the plugin manages
+                        rows, its own rows waiting for next season are not counted.</div>
+                    <p class="ucOrphanCount" style="margin: .4em 0;">Counting orphaned rows...</p>
+                    <ul class="ucOrphanList" style="margin: .2em 0 .8em; max-height: 9em; overflow-y: auto; font-size: .9em;"></ul>
+                    <button is="emby-button" type="button" id="ucClearOrphans" class="raised" disabled><span>Clear orphaned rows</span></button>
                 </div>
 
                 <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>

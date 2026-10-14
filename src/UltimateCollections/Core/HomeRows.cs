@@ -7,7 +7,8 @@
 //
 // NOTE: we only touch rows we track in home-rows.json: rows we added, and rows we adopted because they point at one
 // of our collections (by hand, or copied with Emby's "Copy Data to Users" or another plugin). Every other row is left
-// alone. Found 2026-10-12: Emby makes a row's Id (a GUID) and refuses ours, the GUIDs are only unique per user (a copy
+// alone, except by the admin's "Clear orphaned rows" button (FindOrphans), which removes any row whose collection is
+// gone. Found 2026-10-12: Emby makes a row's Id (a GUID) and refuses ours, the GUIDs are only unique per user (a copy
 // keeps the source user's GUIDs), and an empty row (its collection deleted off season) is hidden by the web and TV
 // apps. That last one is why rows stay all year: the user's chosen position survives until next season.
 
@@ -286,6 +287,15 @@ namespace UltimateCollections.Core
         public int Errors { get; set; }
     }
 
+    // A row whose collection is gone (see HomeRowSync.FindOrphans).
+    public sealed class OrphanRow
+    {
+        public string UserId { get; set; }
+        public string User { get; set; }
+        public string Section { get; set; }
+        public string Name { get; set; }
+    }
+
     // Runs after the collections are synced, so `collections` (name -> Emby id of our collections that exist now)
     // already has this run's new ids. Changes State in place; the task saves it after a real run.
     public sealed class HomeRowSync
@@ -548,6 +558,73 @@ namespace UltimateCollections.Core
                 changed = true;
             }
             return changed;
+        }
+
+        // ---- orphaned rows (the settings page's "Clear orphaned rows") ----
+
+        // Single Collection rows, on any user's home screen, whose collection no longer exists in Emby: left by a
+        // switch-off with "Leave them", a collection deleted or renamed, or another plugin. Emby hides them, but they
+        // are still listed in the user's home screen settings and an empty first row blocks the full-screen spotlight.
+        // Any such row counts, not only ours: an empty row is no use to anyone.
+        // While home rows are on (cfg given), two kinds of empty rows are kept, because the next run uses them: rows
+        // we track (waiting for next season) and rows it would adopt (pointing at an old id of a collection that is
+        // wanted for that user). A ParentId we cannot read as an Emby id is left alone.
+        public List<OrphanRow> FindOrphans(Func<long, bool> itemExists, CollectionsConfig cfg, HomeRowSettings s)
+        {
+            var orphans = new List<OrphanRow>();
+            var adoptable = new HashSet<string>();
+            if (cfg != null)
+                foreach (var c in cfg.Collections.Where(c => HomeRowRules.Wanted(c, s)))
+                    if (State.History.TryGetValue(c.Name, out var ids) && ids != null)
+                        adoptable.UnionWith(ids.Select(id => id.ToString()));
+            foreach (var u in _screens.GetUsers())
+            {
+                var kept = new HashSet<string>();
+                if (cfg != null && State.Users.TryGetValue(u.Id, out var rows))
+                    kept.UnionWith(rows.Values.Where(r => r.Section != null).Select(r => r.Section));
+                var inScope = cfg != null && (s.AllUsers || s.Users.Contains(u.Id));
+                List<HomeSection> sections;
+                try
+                {
+                    sections = _screens.Get(u.Id);
+                }
+                catch (Exception e)
+                {
+                    _log.Warn($"could not read {u.Name}'s home screen: {e.Message}");
+                    continue;
+                }
+                foreach (var x in sections)
+                {
+                    if (x.SectionType != "boxset" || !long.TryParse(x.ParentId, out var pid) || itemExists(pid))
+                        continue;
+                    if (kept.Contains(x.Id) || (inScope && adoptable.Contains(x.ParentId)))
+                        continue;
+                    orphans.Add(new OrphanRow { UserId = u.Id, User = u.Name, Section = x.Id, Name = x.Name });
+                }
+            }
+            return orphans;
+        }
+
+        // Deletes what FindOrphans finds right now, one call per user. A user whose home screen fails is logged and
+        // skipped. Returns how many rows were removed.
+        public int ClearOrphans(Func<long, bool> itemExists, CollectionsConfig cfg, HomeRowSettings s)
+        {
+            var removed = 0;
+            foreach (var g in FindOrphans(itemExists, cfg, s).GroupBy(o => o.UserId))
+            {
+                var user = g.First().User;
+                try
+                {
+                    _screens.Delete(g.Key, g.Select(o => o.Section).ToArray());
+                    removed += g.Count();
+                    _log.Info($"orphaned home rows removed for {user}: {string.Join(", ", g.Select(o => o.Name ?? "(no name)"))}");
+                }
+                catch (Exception e)
+                {
+                    _log.Warn($"could not remove the orphaned home rows for {user}: {e.Message}");
+                }
+            }
+            return removed;
         }
 
         // Switching the feature off: take every row we track off every home screen (unless keepRows), then forget
