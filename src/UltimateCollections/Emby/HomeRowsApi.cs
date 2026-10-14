@@ -13,6 +13,7 @@ using System.IO;
 using System.Linq;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
+using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.Services;
@@ -72,9 +73,12 @@ namespace UltimateCollections.Emby
         readonly ILibraryManager _library;
         readonly ILogger _logger;
         readonly IJsonSerializer _jsonSerializer;
+        readonly ILocalizationManager _localization;
 
-        public HomeRowsApi(IUserManager users, ILibraryManager library, ILogManager logManager, IJsonSerializer jsonSerializer)
+        public HomeRowsApi(IUserManager users, ILibraryManager library, ILogManager logManager, IJsonSerializer jsonSerializer,
+            ILocalizationManager localization)
         {
+            _localization = localization;
             _users = users;
             _library = library;
             _logger = logManager.GetLogger("UltimateCollections");
@@ -125,7 +129,7 @@ namespace UltimateCollections.Emby
                 int removed;
                 using (var log = new SyncLog(_logger, Path.Combine(DataDir, "logs")))
                 {
-                    var sync = new HomeRowSync(new EmbyHomeScreens(_users, json, Path.Combine(DataDir, "backups")), state, log);
+                    var sync = new HomeRowSync(new EmbyHomeScreens(_users, _localization, json, Path.Combine(DataDir, "backups")), state, log);
                     removed = sync.RemoveAll(keepRows: !request.RemoveRows);
                 }
                 SyncCollectionsTask.SaveJson(json, path, state);
@@ -178,7 +182,7 @@ namespace UltimateCollections.Emby
         HomeRowSync Orphans(EmbyJson json, ISyncLog log)
         {
             var state = SyncCollectionsTask.LoadJson<HomeRowsState>(json, Path.Combine(DataDir, "home-rows.json")).Normalize();
-            return new HomeRowSync(new EmbyHomeScreens(_users, json, Path.Combine(DataDir, "backups")), state, log);
+            return new HomeRowSync(new EmbyHomeScreens(_users, _localization, json, Path.Combine(DataDir, "backups")), state, log);
         }
 
         // The config for FindOrphans' "keep what the next run needs" rules: only while home rows are on (null = off).

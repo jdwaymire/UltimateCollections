@@ -17,6 +17,7 @@ using System.Threading.Tasks;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Serialization;
@@ -34,10 +35,13 @@ namespace UltimateCollections.Emby
         readonly IProviderManager _providers;
         readonly IFileSystem _fileSystem;
         readonly IUserManager _users;
+        readonly ILocalizationManager _localization;
 
         public SyncCollectionsTask(ILibraryManager library, ICollectionManager collections, ILogManager logManager,
-            IJsonSerializer jsonSerializer, IProviderManager providers, IFileSystem fileSystem, IUserManager users)
+            IJsonSerializer jsonSerializer, IProviderManager providers, IFileSystem fileSystem, IUserManager users,
+            ILocalizationManager localization)
         {
+            _localization = localization;
             _library = library;
             _collections = collections;
             _logger = logManager.GetLogger("UltimateCollections");
@@ -174,7 +178,7 @@ namespace UltimateCollections.Emby
                 {
                     try
                     {
-                        var rows = new HomeRowSync(new EmbyHomeScreens(_users, json, Path.Combine(dataDir, "backups")), home, log)
+                        var rows = new HomeRowSync(new EmbyHomeScreens(_users, _localization, json, Path.Combine(dataDir, "backups")), home, log)
                             .Run(cfg, conf.GetHomeRowSettings(), syncer.State, options);
                         homeNote = $", home rows {rows.Added} added, {rows.Updated} updated, {rows.Adopted} adopted, {rows.Moved} moved, " +
                                    $"{rows.Removed} removed{(rows.Errors > 0 ? $", {rows.Errors} user(s) failed" : "")}";

@@ -73,6 +73,8 @@ namespace UltimateCollections.Core
         void Update(string userId, string sectionId, string parentId, string viewType);
         void Delete(string userId, string[] sectionIds);
         void Move(string userId, string sectionId, int newIndex);
+        // Deletes every stored row so Emby shows its defaults again; returns the list afterwards.
+        List<HomeSection> ResetToDefaults(string userId);
     }
 
     // Our row for one collection on one user's home screen.
@@ -366,6 +368,23 @@ namespace UltimateCollections.Core
                 }
                 State.Users.Remove(u.Id);
                 return;
+            }
+
+            // Only rows we added and nothing else: Emby's own rows were lost when we added to a user who still had
+            // the defaults (fixed in 1.2.2, see EmbyHomeScreens.Add). Back to the defaults, and our rows are added
+            // again below, the fixed way. Rows we adopted don't count: they came from somebody else.
+            var added = new HashSet<string>(rows.Values.Where(r => r.Section != null && !r.Adopted).Select(r => r.Section));
+            if (sections.Count > 0 && sections.All(x => added.Contains(x.Id)))
+            {
+                _log.Info($"{tag}home rows: {u.Name}'s home screen had only our rows (Emby's own rows were lost), back to Emby's defaults");
+                if (!o.DryRun)
+                {
+                    sections = _screens.ResetToDefaults(u.Id);
+                    if (sections.Count == 0)
+                        _log.Warn($"home rows: Emby did not bring back its default rows for {u.Name}; set up their home screen in Emby");
+                    foreach (var name in rows.Where(kv => kv.Value.Section != null).Select(kv => kv.Key).ToList())
+                        rows.Remove(name);
+                }
             }
 
             foreach (var c in cfg.Collections)

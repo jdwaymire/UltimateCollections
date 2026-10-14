@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.2 (2026-10-14)
+
+### Fix: new users lost Emby's default home screen rows
+
+Fixes [#1](https://github.com/jdwaymire/UltimateCollections/issues/1).
+
+- A user who had never changed their home screen (for example a newly created user) ended up with **only the
+  seasonal row** after the task ran: Emby's own rows (My Media, Continue Watching, Latest ...) disappeared. The plugin
+  now saves Emby's default rows first, the way Emby's own home screen editor does, and adds its row after Continue
+  Watching as intended.
+- Users already affected are repaired on the next run: their home screen goes back to Emby's defaults and the
+  collection rows are added again. Each user's home screen is backed up first.
+
 ## 1.2.1 (2026-10-14)
 
 ### Clean-up buttons and a clearer TMDb token error
