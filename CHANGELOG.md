@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.3.0 (2026-10-15)
+
+### A new settings page: status at a glance, tabs, run history
+
+- **Status cards** at the top: *Collections* (how many are in Emby now, how many are configured, which seasonal one
+  appears next; click for a list of every collection with its source, title count and season), *Home rows* (on or
+  off, how many users, what is showing) and *Last run* (when, what it changed, errors). A line next to the title says
+  how the last run went, and **Dry run** shows in orange there and on the card, so it is hard to leave on by accident.
+- **Tabs** instead of one long form: **Settings** (opens first), **Images**, **Home Screen**, **Clean-up** and
+  **History**. The page follows Emby's theme (light or dark) and fits Emby's settings page width.
+- **Run now** on the Settings tab starts the sync task straight away (the same task as under Scheduled Tasks), and the
+  page shows its progress and result when it finishes.
+- **History** tab: every run (the last 200), quiet nights included, with when it ran, how it was started (scheduled,
+  Run now, or by hand from Scheduled Tasks) and what it changed ("Halloween created with N titles", "Time Travel +2
+  -0 titles"). Click a run for the details; *Changes only* hides the quiet ones. Kept in `history.json`.
+- **Settings** tab: the TMDb token shows as one line (*Token saved* / *Change*) once it works, and opens again with a
+  warning when TMDb refused it. The collections text is now called **Configuration text** and counts its collections.
+  **Ignore seasons** is greyed out unless **Dry run** is on (it only ever worked in a dry run). *Log the matching
+  titles* is now **Debug - Log Matching Titles**, at the bottom of the run options.
+- **Images** tab replaces the *Custom images* popup: every collection as a poster tagged *Drawn* or *Override*; click
+  one for its poster and backdrop, **Poster style...**, **Override Poster...** and **Override Backdrop...**. Previews
+  of collections that are not built yet are drawn one at a time, only for the posters on screen.
+- **Home Screen** tab (was the *Home screen rows* section): **Manage Home Screen** switch, users picked with name
+  chips, Cards/Spotlight and where new rows go as buttons, and the rows list.
+- **Clean-up** tab: *Delete unused images*, *Clear orphaned rows* and the Danger zone (*Delete All Collections*,
+  folded closed) in one place.
+- **Unsaved changes** shows next to Save while something on the Settings or Home Screen tab is not saved yet.
+- Nothing changes in how collections are built; existing settings carry over as they are.
+
 ## 1.2.2 (2026-10-14)
 
 ### Fix: new users lost Emby's default home screen rows

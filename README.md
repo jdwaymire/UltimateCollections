@@ -124,8 +124,8 @@ collections the plugin owns are kept.
 Start safely: the plugin begins in **dry run** mode, where it only writes to its log what it *would* do.
 
 1. Open **Dashboard > Plugins > Ultimate Collections**.
-2. Paste your TMDb token.
-3. The big text box already holds a small sample, a **Hacker Movies** collection, just for fun. Keep it, change it,
+2. Paste your TMDb token at the top of the **Settings** tab (the page opens on it).
+3. The **Configuration text** box already holds a small sample, a **Hacker Movies** collection, just for fun. Keep it, change it,
    or add a few of your own below it, for example:
 
    ```ini
@@ -143,10 +143,11 @@ Start safely: the plugin begins in **dry run** mode, where it only writes to its
 
    Want a head start? [`examples/collections.conf`](examples/collections.conf) has 19 ready-made collections
    (Halloween, Christmas, Time Travel, the best of every decade and more) that you can paste in whole.
-4. Leave **Dry run** ticked, tick **Log the matching titles**, and press **Save**.
-5. Go to **Dashboard > Scheduled Tasks > Ultimate Collections > Sync collections** and press **Run now** (the
-   play button).
-6. Read the log (see [Files and logs](#files-and-logs)). You will see lines like:
+4. Leave **Dry run** on, switch on **Debug - Log Matching Titles**, and press **Save**.
+5. Press **Run now** on the Settings tab. (It starts the task **Dashboard > Scheduled Tasks > Ultimate Collections >
+   Sync collections**, which you can also start there.)
+6. The **Last run** card and the **History** tab show what the run would change. For the details, read the log (see
+   [Files and logs](#files-and-logs)). You will see lines like:
 
    ```
    [dry-run] start: 3 collections in config
@@ -158,7 +159,7 @@ Start safely: the plugin begins in **dry run** mode, where it only writes to its
    "list has 948" is how many titles TMDb knows for that keyword; "67 items" is how many of those you own.
    In dry run the plugin also writes the posters and backdrops it would use into its `previews/` folder, so you can
    look at them first.
-7. When the log looks right, **untick Dry run**, Save, and run the task again. Your collections appear in Emby.
+7. When the log looks right, switch **Dry run** off, Save, and press **Run now** again. Your collections appear in Emby.
 
 From then on the task runs **every day at 05:00** (change the time in Scheduled Tasks if you like).
 
@@ -168,20 +169,37 @@ From then on the task runs **every day at 05:00** (change the time in Scheduled 
 
 ![Settings page](docs/images/settings-page.png)
 
+At the top are three **status cards** and, next to the title, how the last run went:
+
+- **Collections**: how many are in Emby now, how many are in your configuration, and which seasonal one appears
+  next. Click it for a list of every collection: what it is made from, how many titles it has, and when it shows.
+- **Home rows**: whether the plugin manages home screen rows, for how many users, and which collection is showing.
+- **Last run**: when the task last ran, what it changed and how many errors it had. Click it for the History tab.
+  While **Dry run** is on, this card and the line at the top say so in orange.
+
+Below them are five tabs. **Save** saves the Settings and Home Screen tabs, and *Unsaved changes* shows next to it
+while something is not saved yet. The buttons on the Images and Clean-up tabs act right away.
+
+| Tab | What is on it |
+|---|---|
+| **Settings** | The TMDb token, the configuration text and the run options (below). The page opens on it. |
+| **Images** | Every collection's poster, **Poster style...**, and your own pictures (see [Posters and backdrops](#posters-and-backdrops)). |
+| **Home Screen** | Collections as rows on your users' home screens (see [Home screen rows](#home-screen-rows)). |
+| **Clean-up** | Unused images, orphaned home screen rows, and the Danger zone with *Delete All Collections* (see [below](#delete-all-collections)). |
+| **History** | Every run (the last 200), quiet nights included: when, how it was started (*Scheduled*, *Run now*, or *Manual* from Scheduled Tasks), and what it changed. Click a run for the details; *Changes only* hides the quiet ones. |
+
+The **Settings** tab:
+
 | Setting | What it does |
 |---|---|
-| **TMDb read access token (v4)** | Your TMDb token (see above). Stored in Emby's plugin settings; never written into URLs or the log. |
+| **Run now** | Starts the sync task right away (the same task as in Scheduled Tasks). It uses the saved settings, so Save first. |
+| **TMDb read access token (v4)** | Your TMDb token (see above). Stored in Emby's plugin settings; never written into URLs or the log. Once saved it shows as *Token saved*; press **Change** to enter a new one. |
+| **Configuration text** | The collection definitions, written in the config language below. *Keys you can use* lists every key. |
 | **Dry run** | Log what would change, change nothing. Posters and backdrops are written to `previews/` instead of being set. Leave it on until the log looks right. |
-| **Log the matching titles** | Writes every matching title (with its Emby, TMDb and IMDb ids) into the log. Handy while building a collection. |
-| **Ignore seasons** | Dry run only. Treats every seasonal collection as if it were in season, so you can preview Christmas in July. |
-| **Download all lists again on the next run** | Ignores the saved lists once and downloads everything again. Switches itself off after that run. Normally not needed (see [How the nightly sync works](#how-the-nightly-sync-works)). |
-| **Poster style...** | Opens a popup for picking a collection's poster colours with a live preview (see [Posters and backdrops](#posters-and-backdrops)). |
-| **Custom images...** | Opens a popup for uploading your own poster or backdrop for a collection, instead of the generated one (see [Your own poster or backdrop](#your-own-poster-or-backdrop)). |
+| **Ignore seasons** | Dry run only (greyed out without it). Treats every seasonal collection as if it were in season, so you can preview Christmas in July. |
+| **Download all lists again next run** | Ignores the saved lists once and downloads everything again. Switches itself off after that run. Normally not needed (see [How the nightly sync works](#how-the-nightly-sync-works)). |
+| **Debug - Log Matching Titles** | Writes every matching title (with its Emby, TMDb and IMDb ids) into the log. Helps in troubleshooting. |
 | **Only these collections** | Comma-separated collection names, e.g. `Halloween, Dinosaurs`. The next runs touch only those. Empty = all. Useful while you build or fix one collection. |
-| **Collections** | The collection definitions, written in the config language below. |
-| **Home screen rows** | Off by default. Puts collections on your users' home screens as rows (see [Home screen rows](#home-screen-rows)). |
-
-Below the form is the **Danger zone** with *Delete All Collections* (see [below](#delete-all-collections)).
 
 ---
 
@@ -275,7 +293,7 @@ This is the one rule worth reading twice:
 | `tv` | `tv yes` | Also include **TV shows** from the same sources (default: movies only). Not possible together with `tmdb_actor`. TMDb uses different genres for TV (there is no "Horror" for shows), so movie-only genres in `exclude_genre` are skipped for the TV part. |
 | `min_items` | `min_items 5` | Overrides the global `min_items` for this collection. |
 | `max_pages` | `max_pages 25` | Overrides the global `max_pages` for this collection (25 pages = top 500 titles). |
-| `home_screen` | `home_screen spotlight` | Only used when *Manage home screen rows* is on. `yes` = a row on the home screen, `spotlight` = a row shown as a big banner, `no` = never a row (also for a seasonal collection). See [Home screen rows](#home-screen-rows). Changing it never causes a list download. |
+| `home_screen` | `home_screen spotlight` | Only used when *Manage Home Screen* is on. `yes` = a row on the home screen, `spotlight` = a row shown as a big banner, `no` = never a row (also for a seasonal collection). See [Home screen rows](#home-screen-rows). Changing it never causes a list download. |
 
 ### Poster settings
 
@@ -474,17 +492,16 @@ For every collection the plugin draws:
 
 ### The Poster style popup: no numbers needed
 
-You don't have to type colour numbers. On the settings page, press **Poster style...**:
+You don't have to type colour numbers. On the **Images** tab, click a collection and press **Poster style...**:
 
 ![The Poster style popup](docs/images/poster-style.png)
 
-1. Pick the **collection** (the popup opens on the one your text cursor is in).
-2. Click one of the **ready-made styles**, or choose the **accent** and **tint** with the colour pickers.
-3. Change the **title** if you like (`|` starts a new line), and tick **sepia** for an old-photo look.
-4. Watch the **preview**: it is drawn by the plugin itself, from the collection's own best-rated movies, exactly the
+1. Click one of the **ready-made styles**, or choose the **accent** and **tint** with the colour pickers.
+2. Change the **title** if you like (`|` starts a new line), and tick **sepia** for an old-photo look.
+3. Watch the **preview**: it is drawn by the plugin itself, from the collection's own best-rated movies, exactly the
    way the nightly run will draw it. A collection that is out of season is previewed from its saved list; a brand-new
    one that has never run yet uses the best-rated movies in your library instead.
-5. Press **Apply**. The popup writes the `poster_*` lines into the collections text for you. Then press **Save**.
+4. Press **Apply**. The popup writes the `poster_*` lines into the configuration text for you. Then press **Save**.
 
 The popup warns you when the accent is too dark or the tint too light to read well. Trying colours costs no TMDb
 requests and changes nothing until you Save.
@@ -501,7 +518,7 @@ Emby by hand, the next run puts it back.
 | `poster_accent` | `poster_accent 90,220,255` | Accent colour as `red,green,blue` (0-255): the bars above and below the title and the upper title lines. Default: picked from a palette by the collection name. |
 | `poster_tint` | `poster_tint 10,30,70` | The colour the mosaic is tinted with. Default: a dark shade of the accent. |
 | `poster_sepia` | `poster_sepia yes` | Old-photo look. Nice for old decades. |
-| `posters` | `posters no` | No generated poster or backdrop for this collection. Your own images from **Custom images** are still used. |
+| `posters` | `posters no` | No generated poster or backdrop for this collection. Your own pictures from the **Images** tab are still used. |
 
 You can also write the lines by hand. Example:
 
@@ -526,21 +543,23 @@ Tips:
 
 ### Your own poster or backdrop
 
-Prefer a picture of your own for a collection? On the settings page, press **Custom images...**. The popup lists
-every collection in your settings with its poster and its backdrop:
+Prefer a picture of your own for a collection? Open the **Images** tab. It shows every collection in your
+configuration text as a poster, tagged **Drawn** (made by the plugin) or **Override** (your own picture). Click one to
+see its poster and backdrop below the grid:
 
-![The Custom images popup](docs/images/custom-images.png)
+![The Images tab](docs/images/custom-images.png)
 
-- **GENERATED**: what the plugin made and Emby shows now.
+- **DRAWN**: what the plugin made and Emby shows now.
 - **PREVIEW**: the collection is not built yet (out of season, or new), so you see what the plugin will make.
-- **CUSTOM**: your own picture, used instead of the generated one.
+- **OVERRIDE**: your own picture, used instead of the drawn one.
 
-Press **Upload** under a poster or backdrop and pick a **JPEG or PNG** (up to 10 MB). Best sizes: 1000x1500 for
-posters, 1920x1080 for backdrops. Pictures of another shape are cropped to fill the frame by Emby's apps; the popup
-shows that crop, says how much is cut off, and shows the whole picture when you hover over it (or tap it).
+Press **Override Poster...** or **Override Backdrop...** and pick a **JPEG or PNG** (up to 10 MB). Best sizes:
+1000x1500 for posters, 1920x1080 for backdrops. Pictures of another shape are cropped to fill the frame by Emby's
+apps; the tab shows that crop, says how much is cut off, and shows the whole picture when you hover over it (or tap
+it).
 
-Your picture is put on the collection by the next sync (or press *Run now* on the task). **Replace** swaps it for
-another one; **Remove** brings the generated artwork back on the next sync. A seasonal collection keeps its custom
+Your picture is put on the collection by the next sync (or press **Run now** on the Settings tab). **Replace...**
+swaps it for another one; **Remove** brings the drawn artwork back on the next sync. A seasonal collection keeps its
 picture every year.
 
 The pictures are kept in the plugin's `images/` folder, named after the collection: `Halloween.jpg` for the poster,
@@ -549,7 +568,7 @@ The pictures are kept in the plugin's `images/` folder, named after the collecti
 isn't a usable JPEG or PNG is skipped with a warning in the log, and the collection keeps the picture it has.
 
 **Unused images.** When the folder holds pictures no collection uses (the collection was renamed or removed, or two
-files belong to the same poster), the popup lists them at the top with a **Delete unused images** button.
+files belong to the same poster), the **Clean-up** tab lists them with a **Delete unused images** button.
 
 ---
 
@@ -559,18 +578,17 @@ Emby 4.10 lets every user arrange their own home screen with rows of their choic
 collections there too, and keep them right through the year: **Halloween appears on the home screen on October 1st
 and is gone on November 1st**, without anyone opening a settings page.
 
-It is **off by default**. Tick **Manage home screen rows** on the settings page, pick the options, press **Save**, and
-the rows appear on the next sync (or press *Run now* on the task).
+It is **off by default**. On the **Home Screen** tab, switch on **Manage Home Screen**, pick the options, press
+**Save**, and the rows appear on the next sync (or press **Run now** on the Settings tab).
 
-![The Home screen rows settings](docs/images/home-screen-rows.png)
+![The Home Screen tab](docs/images/home-screen-rows.png)
 
 > **Already using another plugin for home screens** (for example Home Screen Companion)? Let only one of them manage
 > collection rows. If the other plugin copies home screens between users, a user can end up with a row twice.
 
 ### Which collections get a row
 
-- **Seasonal collections** get one automatically (tick box *Seasonal collections get a row automatically*, on by
-  default).
+- **Seasonal collections** get one automatically (*Seasonal collections get a row automatically*, on by default).
 - **Other collections** get one only when you ask for it: add `home_screen yes` to the collection.
 - `home_screen no` keeps a collection off the home screen, also a seasonal one.
 - `home_screen spotlight` shows the row as a big **spotlight** banner instead of a row of posters.
@@ -591,9 +609,9 @@ home_screen   yes            # a permanent collection: asks for a row
 
 | Option | What it does |
 |---|---|
-| **Which users** | *All users* (including users added later), or *Only these users* with a list to tick. |
-| **Default style** | *Cards* (a row of posters, like *Latest Movies*) or *Spotlight* (a big banner). `home_screen spotlight` sets it for one collection. |
-| **Where new rows go** | *After Continue Watching / Next Up* (default), *at the top* or *at the bottom*. Only used when a row is first added: when a user moves a row, it stays where they put it. |
+| **Who** | *All users* (including users added later), or click users' names to pick only those. |
+| **Style** | *Cards* (a row of posters, like *Latest Movies*) or *Spotlight* (a big banner). `home_screen spotlight` sets it for one collection. |
+| **New rows go** | *After Continue* (Watching / Next Up, the default), *Top* or *Bottom*. Only used when a row is first added: when a user moves a row, it stays where they put it. |
 | **Move a seasonal spotlight to the top when its season starts** | Off by default. The web app shows the first row of the home screen as a full-screen banner; with this on, a seasonal spotlight collection takes that spot when its season starts, and moves to the bottom when it ends. Users can still move it down. TV apps show it as a banner row. |
 | **Seasonal collections get a row automatically** | See above. |
 
@@ -621,7 +639,7 @@ row*, its style, and how many users have it.
 
 ### Switching it off
 
-Untick **Manage home screen rows**. A box asks what to do with the rows:
+Switch off **Manage Home Screen**. A box asks what to do with the rows:
 
 - **Remove the rows the plugin added** (the default): they are taken off every home screen right away (a backup is
   saved first). Rows users made themselves, or that another plugin added, stay.
@@ -631,8 +649,8 @@ Untick **Manage home screen rows**. A box asks what to do with the rows:
 
 A row whose collection no longer exists (left behind by *Leave them as they are*, or a collection that was deleted)
 is hidden by Emby, but it stays in the user's home screen settings, and an empty first row stops the next one from
-showing as a full-screen spotlight. The **Orphaned rows** part of the section counts and lists them on every user's
-home screen, and **Clear orphaned rows** removes them (a backup is saved first). It works whether or not the plugin
+showing as a full-screen spotlight. The **Orphaned rows** box on the **Clean-up** tab counts and lists them on every
+user's home screen, and **Clear orphaned rows** removes them (a backup is saved first). It works whether or not the plugin
 manages rows; while it does, its own rows waiting for next season are kept.
 
 ### Good to know
@@ -658,7 +676,7 @@ Every run, for every collection:
    - the first time,
    - when the saved copy is older than `list_refresh_days` (default 7),
    - when you change a setting that affects *what* is downloaded (sources, filters, `tv`, `max_pages`),
-   - or when you tick *Download all lists again*.
+   - or when you switch on *Download all lists again next run*.
 
    Otherwise the saved copy is used. Changing a collection's poster settings or name of another collection does not
    trigger a download.
@@ -685,7 +703,7 @@ MDBList's public lists need no key.
 
 ## Delete All Collections
 
-At the bottom of the settings page, in the red **Danger zone**.
+On the **Clean-up** tab, in the red **Danger zone** (folded closed; click it to open).
 
 ![Danger zone](docs/images/danger-zone.png)
 
@@ -720,6 +738,7 @@ The plugin keeps its files in its **data folder**, inside Emby's `plugins` folde
 | `artwork-state.json` | What each collection's poster and backdrop were made from, so unchanged artwork is not uploaded again. |
 | `images/` | Your own posters and backdrops (see [Your own poster or backdrop](#your-own-poster-or-backdrop)). |
 | `previews/` | Posters and backdrops drawn during a dry run. |
+| `history.json` | The run history behind the History tab and the Last run card (the last 200 runs). Safe to delete; it starts again with the next run. |
 | `home-rows.json` | Which home screen rows the plugin added or took over, per user, and the Emby ids each collection has had (so a row copied last season is still recognised). **Better not delete:** the plugin would forget which rows users removed, and could add them again. |
 | `backups/` | Backups written by *Delete All Collections*, and each user's home screen before the plugin first changes it on a day. |
 
@@ -764,9 +783,9 @@ collection with that name. Delete or rename yours, or give the plugin's collecti
   matched.
 - Check that it really has that keyword on TMDb, and that it is not removed by `exclude_genre` (Emby's genres count
   too) or by `min_rating` / `min_votes`.
-- Lists are reused for a week; if the title was only recently added to TMDb or MDBList, tick *Download all lists
+- Lists are reused for a week; if the title was only recently added to TMDb or MDBList, switch on *Download all lists
   again* or wait for the weekly refresh.
-- Turn on *Log the matching titles* and use *Only these collections* to see exactly what matched.
+- Turn on *Debug - Log Matching Titles* and use *Only these collections* to see exactly what matched.
 
 **A movie I added today is not in its collection yet.** It joins on the next nightly run (or press *Run now*).
 

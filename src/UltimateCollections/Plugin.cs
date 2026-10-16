@@ -26,6 +26,10 @@ namespace UltimateCollections
         // for it; the delete button does not wait and is refused instead (see CollectionsApi).
         public static readonly System.Threading.SemaphoreSlim WorkLock = new System.Threading.SemaphoreSlim(1, 1);
 
+        // Set by the settings page's Run now just before it queues the sync task, so the run's history entry says
+        // "Run now" (Emby does not tell a task what started it). The task clears it.
+        public static DateTime? PageRunRequestedUtc { get; set; }
+
         public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer) : base(applicationPaths, xmlSerializer)
         {
             Instance = this;

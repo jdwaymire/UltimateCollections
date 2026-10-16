@@ -69,6 +69,12 @@ namespace UltimateCollections.Core
         public int Created { get; set; }
         public int Updated { get; set; }
         public int Deleted { get; set; }
+        // Lists downloaded this run (saved copies do not count).
+        public int Downloads { get; set; }
+        // Short lines for the History tab: "Halloween created with 112 titles", "Time Travel +2 -0 titles", ...
+        public List<string> Changes { get; } = new List<string>();
+        // "Christmas: sources returned nothing", ...: one line per collection error.
+        public List<string> Problems { get; } = new List<string>();
     }
 
     public static class Matcher
@@ -169,6 +175,7 @@ namespace UltimateCollections.Core
                 {
                     _log.Error($"[{c.Name}] ERROR, collection left unchanged: {e.Message}");
                     res.Errors++;
+                    res.Problems.Add($"{c.Name}: {e.Message}");
                 }
             }
 
@@ -187,6 +194,7 @@ namespace UltimateCollections.Core
                         State.Remove(name);
                     }
                     res.Deleted++;
+                    res.Changes.Add($"{name} deleted (no longer in the configuration)");
                 }
             }
             progress?.Report(100);
@@ -228,6 +236,7 @@ namespace UltimateCollections.Core
                     State.Remove(name);
                 }
                 res.Deleted++;
+                res.Changes.Add($"{name} deleted ({why})");
             }
 
             // Seasonal collections only exist inside their window; outside it ours is deleted.
@@ -236,7 +245,7 @@ namespace UltimateCollections.Core
             {
                 if (cid.HasValue)
                     DeleteOwned($"off season ({season})");
-                await KeepListReadyAsync(c, season, maxPagesDefault, refreshDays, o, ct).ConfigureAwait(false);
+                await KeepListReadyAsync(c, season, maxPagesDefault, refreshDays, o, res, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -250,6 +259,8 @@ namespace UltimateCollections.Core
                 var maxPages = c.Get("max_pages") != null ? int.Parse(c.Get("max_pages")) : maxPagesDefault;
                 var (r, how) = await _cache.GetAsync(c, () => _download(c, maxPages), refreshDays, o.Refresh, ct).ConfigureAwait(false);
                 src = how;
+                if (how.StartsWith("downloaded", StringComparison.Ordinal))
+                    res.Downloads++;
                 listed = r.Listed;
                 want.UnionWith(Matcher.ByIds(c, r.Tmdb, r.Imdb, lib));
                 if (c.WantsTv)
@@ -266,6 +277,7 @@ namespace UltimateCollections.Core
             {
                 _log.Error($"[{name}] ERROR: sources returned nothing, collection left unchanged");
                 res.Errors++;
+                res.Problems.Add($"{name}: sources returned nothing");
                 return;
             }
             if (o.ShowTitles)
@@ -286,6 +298,7 @@ namespace UltimateCollections.Core
                 if (!o.DryRun)
                     State[name] = await _emby.CreateCollectionAsync(name, want.OrderBy(x => x).ToArray()).ConfigureAwait(false);
                 res.Created++;
+                res.Changes.Add($"{name} created with {want.Count} titles");
                 await ArtworkAsync(cfg, c, o.DryRun ? (long?)null : State[name], want, lib, shows, o.DryRun, ct).ConfigureAwait(false);
                 return;
             }
@@ -302,7 +315,10 @@ namespace UltimateCollections.Core
                     _emby.Remove(cid.Value, rem);
             }
             if (add.Length > 0 || rem.Length > 0)
+            {
                 res.Updated++;
+                res.Changes.Add($"{name} +{add.Length} -{rem.Length} titles");
+            }
             _log.Info($"[{name}] {tag}{want.Count} items (+{add.Length} -{rem.Length}, list has {listed}, {src})");
             await ArtworkAsync(cfg, c, cid, want, lib, shows, o.DryRun, ct).ConfigureAwait(false);
         }
@@ -314,7 +330,7 @@ namespace UltimateCollections.Core
         // NOTE: costs a few requests a week (small keyword lists, MDBList is free). A failure here is only a warning:
         // nothing in Emby depends on it until the season starts, and then the normal path tries again.
         async Task KeepListReadyAsync(CollectionDefinition c, string season, int maxPagesDefault, double refreshDays, SyncOptions o,
-            CancellationToken ct)
+            SyncResult res, CancellationToken ct)
         {
             if (!c.NeedsDownload)
                 return;
@@ -322,6 +338,8 @@ namespace UltimateCollections.Core
             {
                 var maxPages = c.Get("max_pages") != null ? int.Parse(c.Get("max_pages")) : maxPagesDefault;
                 var (r, how) = await _cache.GetAsync(c, () => _download(c, maxPages), refreshDays, o.Refresh, ct).ConfigureAwait(false);
+                if (how.StartsWith("downloaded", StringComparison.Ordinal))
+                    res.Downloads++;
                 _log.Info($"[{c.Name}] off season ({season}), list kept ready: {r.Listed} listed ({how})");
             }
             catch (OperationCanceledException)

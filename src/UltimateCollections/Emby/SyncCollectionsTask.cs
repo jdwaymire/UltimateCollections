@@ -2,8 +2,9 @@
 //
 // The scheduled task "Ultimate Collections > Sync collections" (Dashboard > Scheduled Tasks). Daily at 05:00 by
 // default, a quiet hour on most servers; "Run now" there is the manual run. It wires the Core pieces to Emby, runs the Syncer once,
-// then the home screen rows (when switched on), and saves state.json, artwork-state.json and home-rows.json. Also home of the
-// small adapters: EmbyJson, SyncLog and ServerLog.
+// then the home screen rows (when switched on), and saves state.json, artwork-state.json and home-rows.json. Every run,
+// dry or real, good or failed, also adds an entry to history.json (the settings page's History tab and status cards).
+// Also home of the small adapters: EmbyJson, SyncLog and ServerLog.
 //
 // NOTE: a dry run saves nothing (state, artwork state). The only setting it changes is "Download all lists again",
 // which is a one-shot and is switched off after any run.
@@ -14,6 +15,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
@@ -36,11 +38,15 @@ namespace UltimateCollections.Emby
         readonly IFileSystem _fileSystem;
         readonly IUserManager _users;
         readonly ILocalizationManager _localization;
+        readonly IApplicationHost _host;
 
+        // NOTE: ITaskManager is looked up through the host at run time (to read our own triggers) instead of being
+        // injected: the task manager creates the tasks, so asking for it in a task's constructor risks a loop.
         public SyncCollectionsTask(ILibraryManager library, ICollectionManager collections, ILogManager logManager,
             IJsonSerializer jsonSerializer, IProviderManager providers, IFileSystem fileSystem, IUserManager users,
-            ILocalizationManager localization)
+            ILocalizationManager localization, IApplicationHost host)
         {
+            _host = host;
             _localization = localization;
             _library = library;
             _collections = collections;
@@ -102,7 +108,52 @@ namespace UltimateCollections.Emby
             var dataDir = plugin.DataFolderPath;
             Directory.CreateDirectory(dataDir);
             var json = new EmbyJson(_jsonSerializer);
+            var entry = new RunEntry
+            {
+                DateUtc = DateTime.UtcNow,
+                DryRun = conf.DryRun,
+                Kind = RunHistory.KindOf(DateTime.Now, Plugin.PageRunRequestedUtc, DateTime.UtcNow, SyncTaskInfo.ScheduledTimes(_host)),
+            };
+            Plugin.PageRunRequestedUtc = null;
             using (var log = new SyncLog(_logger, Path.Combine(dataDir, "logs")))
+            {
+                try
+                {
+                    await SyncAsync(plugin, conf, dataDir, json, log, entry, cancellationToken, progress).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    entry.Failed = "Cancelled";
+                    throw;
+                }
+                catch (Exception e)
+                {
+                    entry.Failed = entry.Failed ?? e.Message;
+                    throw;
+                }
+                finally
+                {
+                    AddHistory(json, log, Path.Combine(dataDir, "history.json"), entry);
+                }
+            }
+        }
+
+        // A history that cannot be written is only a warning; it must never fail the run itself.
+        static void AddHistory(EmbyJson json, ISyncLog log, string path, RunEntry entry)
+        {
+            try
+            {
+                SaveJson(json, path, RunHistory.Add(LoadJson<List<RunEntry>>(json, path), entry));
+            }
+            catch (Exception e)
+            {
+                log.Warn($"run history not saved: {e.GetType().Name}: {e.Message}");
+            }
+        }
+
+        async Task SyncAsync(Plugin plugin, PluginConfiguration conf, string dataDir, EmbyJson json, SyncLog log, RunEntry entry,
+            CancellationToken cancellationToken, IProgress<double> progress)
+        {
             {
                 // Bad settings or a missing token stop the run before anything is read or changed. The error goes to
                 // our log and is rethrown, so the task also shows as failed in the dashboard.
@@ -114,11 +165,13 @@ namespace UltimateCollections.Emby
                 catch (ConfigException e)
                 {
                     log.Error("ERROR in the collection settings: " + e.Message);
+                    entry.Failed = "Configuration text error: " + e.Message;
                     throw;
                 }
                 if (cfg.Collections.Any(c => c.NeedsDownload) && string.IsNullOrWhiteSpace(conf.TmdbToken))
                 {
                     log.Error("ERROR: no TMDb token set in the plugin settings");
+                    entry.Failed = "No TMDb token set";
                     throw new InvalidOperationException("No TMDb token set");
                 }
 
@@ -157,6 +210,13 @@ namespace UltimateCollections.Emby
                 };
 
                 var result = await syncer.RunAsync(cfg, options, progress, cancellationToken).ConfigureAwait(false);
+                entry.Created = result.Created;
+                entry.Updated = result.Updated;
+                entry.Deleted = result.Deleted;
+                entry.Errors = result.Errors;
+                entry.Downloads = result.Downloads;
+                entry.Changes.AddRange(result.Changes);
+                entry.Problems.AddRange(result.Problems);
 
                 // Artwork state is pruned to the collections we still own, so a deleted collection's entry goes too.
                 if (!conf.DryRun)
@@ -182,10 +242,17 @@ namespace UltimateCollections.Emby
                             .Run(cfg, conf.GetHomeRowSettings(), syncer.State, options);
                         homeNote = $", home rows {rows.Added} added, {rows.Updated} updated, {rows.Adopted} adopted, {rows.Moved} moved, " +
                                    $"{rows.Removed} removed{(rows.Errors > 0 ? $", {rows.Errors} user(s) failed" : "")}";
+                        var rowParts = new[] { (rows.Added, "added"), (rows.Updated, "updated"), (rows.Adopted, "adopted"), (rows.Moved, "moved"), (rows.Removed, "removed") }
+                            .Where(x => x.Item1 > 0).Select(x => $"{x.Item1} {x.Item2}").ToList();
+                        if (rowParts.Count > 0)
+                            entry.Changes.Add("Home rows " + string.Join(", ", rowParts));
+                        if (rows.Errors > 0)
+                            entry.Problems.Add($"Home rows: {rows.Errors} user(s) failed");
                     }
                     catch (Exception e)
                     {
                         log.Warn($"home rows failed, left as they were: {e.GetType().Name}: {e.Message}");
+                        entry.Problems.Add("Home rows failed: " + e.Message);
                     }
                 }
                 if (!conf.DryRun)
@@ -193,7 +260,11 @@ namespace UltimateCollections.Emby
                 // Repeated once at the end, so a refused token is not lost among the per-collection lines (collections
                 // with a saved list keep working from it, which makes the problem easy to miss).
                 if (tmdb.Refused != null)
+                {
                     log.Error("ERROR: " + tmdb.Refused);
+                    entry.Problems.Insert(0, "TMDb refused the token (401)");
+                    entry.Errors++;
+                }
                 if (conf.RefreshNextRun)
                 {
                     conf.RefreshNextRun = false;

@@ -1,199 +1,440 @@
 <div data-role="page" class="page type-interior pluginConfigurationPage ultimateCollectionsConfigPage"
-     data-require="emby-input,emby-button,emby-checkbox,emby-textarea,emby-select,emby-radio"
+     data-require="emby-button"
      data-controller="__plugin/UltimateCollectionsJS">
     <!--
         Settings page of the plugin (embedded resource, see Plugin.GetPages). The script is configPage.js, loaded via
-        data-controller "__plugin/UltimateCollectionsJS". The uc* ids are what configPage.js reads and writes:
-        rename one here and rename it there too. The Danger zone sits outside the form on purpose, so Save never
-        touches it.
+        data-controller "__plugin/UltimateCollectionsJS". Layout (1.3): status cards on top, then tabs: Settings (opens
+        first), Images, Home Screen, Clean-up, History. The uc* ids and classes are what configPage.js reads and writes:
+        rename one here and rename it there too.
+
+        NOTE: every colour comes from Emby's theme variables (--theme-*, --card-background-*, --line-background), so
+        the page follows the theme each admin picks in their profile (light, dark, ...). The only fixed colours are
+        white on the accent colour (as on Emby's own buttons), the orange warning and the red danger zone.
+        NOTE: Emby caps plugin pages at about 45em (727px) wide; the layout is made for that width.
+        NOTE: the Clean-up tab's buttons and the Danger zone act at once and sit outside what Save saves.
     -->
+    <style>
+        .ucPage {
+            --uc-text: hsla(var(--theme-text-color-hue, 0), var(--theme-text-color-saturation, 0%), var(--theme-text-color-lightness, 100%), var(--theme-text-color-alpha, .87));
+            --uc-muted: hsla(var(--theme-text-color-hue, 0), var(--theme-text-color-saturation, 0%), var(--theme-text-color-lightness, 100%), var(--theme-secondary-text-color-alpha, .6));
+            --uc-accent: hsl(var(--theme-primary-color-hue, 116), var(--theme-primary-color-saturation, 41.7%), var(--theme-primary-color-lightness, 50.2%));
+            --uc-accent-text: var(--theme-accent-text-color, #52b54b);
+            --uc-card: hsla(var(--card-background-hue, 0), var(--card-background-saturation, 0%), var(--card-background-lightness, 24%), var(--card-background-alpha, .7));
+            --uc-line: var(--line-background, rgba(128, 128, 128, .25));
+            --uc-soft: color-mix(in srgb, var(--uc-text) 5%, transparent);
+            --uc-accent-soft: color-mix(in srgb, var(--uc-accent) 16%, transparent);
+            --uc-warn: #e09a2b;
+            --uc-warn-soft: rgba(224, 154, 43, .16);
+            --uc-bad: #e05555;
+            --uc-bad-soft: rgba(224, 85, 85, .14);
+            color: var(--uc-text);
+        }
+        .ucPage .ucWrap { display: flex; flex-direction: column; gap: 1.6em; }
+        .ucPage .ucHead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1em; }
+        .ucPage .ucHead h2 { margin: 0 0 .3em; }
+        .ucPage .ucMuted { color: var(--uc-muted); }
+        .ucPage .ucSmall { font-size: .85em; }
+        .ucPage .ucHealth { display: flex; align-items: center; gap: .5em; font-size: .85em; color: var(--uc-muted); }
+        .ucPage .ucHealth.ucWarnText { color: var(--uc-warn); font-weight: 600; }
+        .ucPage .ucDot { width: .55em; height: .55em; border-radius: 50%; background: var(--uc-accent); flex: none; display: inline-block; }
+        .ucPage .ucDot.ucWarnDot { background: var(--uc-warn); }
+        .ucPage .ucDot.ucBadDot { background: var(--uc-bad); }
+        .ucPage .ucDot.ucOff { background: var(--uc-muted); }
+        .ucPage code { font-size: .9em; }
+        .ucPage .ucSmall code { font-size: 1.05em; }
+        .ucPage .ucRowPill { width: 11em; text-align: center; flex: none; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; }
+
+        /* status cards: three across inside Emby's ~45em form */
+        .ucPage .ucCards { display: grid; grid-template-columns: repeat(auto-fit, minmax(12em, 1fr)); gap: .7em; }
+        .ucPage .ucCard { text-align: left; font: inherit; color: inherit; cursor: pointer; background: var(--uc-card); border: 1px solid var(--uc-line);
+            border-radius: .9em; padding: .9em; display: flex; flex-direction: column; gap: .8em; min-width: 0; }
+        .ucPage .ucCard:hover { border-color: var(--uc-muted); }
+        .ucPage .ucCardTop { display: flex; align-items: center; justify-content: space-between; gap: .6em; }
+        .ucPage .ucCardName { display: flex; align-items: center; gap: .6em; font-weight: 600; font-size: .92em; line-height: 1.25; }
+        .ucPage .ucIcon { width: 2.2em; height: 2.2em; border-radius: .6em; background: var(--uc-accent-soft); color: var(--uc-accent-text);
+            display: flex; align-items: center; justify-content: center; flex: none; }
+        .ucPage .ucPill { font-size: .78em; font-weight: 600; padding: .25em .7em; border-radius: 999px; background: var(--uc-accent-soft); color: var(--uc-accent-text); white-space: nowrap; }
+        .ucPage .ucPill.ucOff { background: var(--uc-soft); color: var(--uc-muted); }
+        .ucPage .ucPill.ucWarnPill { background: var(--uc-warn-soft); color: var(--uc-warn); }
+        .ucPage .ucPill.ucBadPill { background: var(--uc-bad-soft); color: var(--uc-bad); }
+        .ucPage .ucBig { display: flex; align-items: baseline; gap: .5em; }
+        .ucPage .ucBig b { font-size: 1.8em; line-height: 1; }
+        .ucPage .ucCardFoot { display: flex; flex-direction: column; gap: .3em; padding-top: .7em; border-top: 1px solid var(--uc-line); font-size: .8em; color: var(--uc-muted); }
+        .ucPage .ucFootLine { display: flex; justify-content: space-between; gap: .8em; white-space: nowrap; }
+        .ucPage .ucFootValue { color: var(--uc-text); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+        /* tabs and panels */
+        .ucPage .ucBox { background: var(--uc-card); border: 1px solid var(--uc-line); border-radius: .9em; overflow: hidden; }
+        .ucPage .ucTabs { display: flex; flex-wrap: wrap; gap: .2em; padding: .4em .5em 0; border-bottom: 1px solid var(--uc-line); }
+        .ucPage .ucTab { font: inherit; min-height: 2.9em; padding: 0 .8em; border: 0; background: transparent; color: var(--uc-muted); cursor: pointer;
+            border-bottom: 3px solid transparent; font-weight: 500; }
+        .ucPage .ucTab[aria-selected="true"] { color: var(--uc-text); border-bottom-color: var(--uc-accent); font-weight: 600; }
+        .ucPage .ucPanel { padding: 1.2em; display: flex; flex-direction: column; gap: 1.2em; }
+        .ucPage .ucPanel[hidden] { display: none; }
+        .ucPage .ucPanelHead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1em; }
+        .ucPage .ucPanelHead h3 { margin: 0 0 .3em; font-size: 1.35em; font-weight: 600; }
+        .ucPage .ucPanelHead p { margin: 0; color: var(--uc-muted); line-height: 1.5; max-width: 36em; }
+        .ucPage .ucBlocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(17em, 1fr)); gap: .7em; }
+        .ucPage .ucBlock { background: var(--uc-soft); border: 1px solid var(--uc-line); border-radius: .75em; padding: 1em; display: flex; flex-direction: column; gap: .7em; min-width: 0; }
+        .ucPage .ucBlock[hidden] { display: none; }
+        .ucPage .ucSpan { grid-column: 1 / -1; }
+        .ucPage .ucLabel { font-size: .75em; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--uc-accent-text); }
+        .ucPage .ucLabelRow { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
+        .ucPage .ucField { font: inherit; color: inherit; background: var(--uc-soft); border: 1px solid var(--uc-line); border-radius: .5em; padding: .6em .7em; width: 100%; box-sizing: border-box; }
+        .ucPage .ucField:focus, .ucPage .ucCode:focus { outline: 2px solid var(--uc-accent); outline-offset: 1px; }
+        .ucPage .ucCode { font-family: monospace; font-size: .9em; color: inherit; background: color-mix(in srgb, var(--uc-text) 4%, transparent); border: 1px solid var(--uc-line); border-radius: .5em;
+            padding: .8em; width: 100%; box-sizing: border-box; min-height: 26em; resize: vertical; white-space: pre; overflow-wrap: normal; overflow-x: auto; line-height: 1.5; }
+        .ucPage .ucKeys { display: flex; flex-wrap: wrap; gap: .4em; margin-top: .6em; }
+        .ucPage .ucKeys code { background: var(--uc-soft); padding: .1em .4em; border-radius: .3em; }
+        .ucPage .ucBtn { font: inherit; font-size: .88em; background: transparent; border: 1px solid var(--uc-line); color: var(--uc-text); border-radius: .5em;
+            padding: .45em .9em; cursor: pointer; min-height: 2.5em; }
+        .ucPage .ucBtn:hover { border-color: var(--uc-muted); }
+        .ucPage .ucBtn[disabled] { color: var(--uc-muted); cursor: default; opacity: .6; }
+        .ucPage .ucLinkBtn { font: inherit; background: none; border: 0; padding: .3em .2em; color: var(--uc-accent-text); cursor: pointer; }
+        .ucPage .ucWarn { color: var(--uc-warn); }
+        .ucPage .ucOk { display: inline-flex; align-items: center; gap: .4em; color: var(--uc-accent-text); font-weight: 500; }
+        .ucPage .ucNote { padding: .55em .8em; border-radius: .5em; background: var(--uc-warn-soft); color: var(--uc-warn); font-size: .9em; }
+
+        /* switch rows (a checkbox) */
+        .ucPage .ucLines { display: flex; flex-direction: column; }
+        .ucPage .ucLine { display: flex; align-items: center; justify-content: space-between; gap: 1em; padding: .7em 0; border-top: 1px solid var(--uc-line); cursor: pointer; }
+        .ucPage .ucLine:first-child { border-top: 0; padding-top: 0; }
+        .ucPage .ucLine.ucDim { opacity: .5; cursor: default; }
+        .ucPage .ucSwitch { position: relative; display: inline-flex; align-items: center; gap: .6em; cursor: pointer; flex: none; }
+        .ucPage .ucSwitch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+        .ucPage .ucTrack { width: 3.2em; height: 1.85em; border-radius: 999px; background: var(--uc-line); position: relative; transition: background .15s; flex: none; }
+        .ucPage .ucTrack::after { content: ""; position: absolute; top: .2em; left: .2em; width: 1.45em; height: 1.45em; border-radius: 50%; background: #fff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: left .15s; }
+        .ucPage .ucSwitch input:checked + .ucTrack { background: var(--uc-accent); }
+        .ucPage .ucSwitch input:checked + .ucTrack::after { left: 1.55em; }
+        .ucPage .ucSwitch input:focus-visible + .ucTrack { outline: 2px solid var(--uc-accent); outline-offset: 2px; }
+        .ucPage .ucSwitchText { font-size: .9em; color: var(--uc-muted); }
+
+        /* segmented control (radios) and checks */
+        .ucPage .ucSeg { display: flex; border: 1px solid var(--uc-line); border-radius: .6em; padding: .2em; background: var(--uc-soft); }
+        .ucPage .ucSeg label { flex: 1; position: relative; }
+        .ucPage .ucSeg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+        .ucPage .ucSeg span { display: flex; align-items: center; justify-content: center; min-height: 2.4em; padding: 0 .6em; border-radius: .45em;
+            cursor: pointer; color: var(--uc-muted); text-align: center; font-size: .9em; }
+        .ucPage .ucSeg input:checked + span { background: var(--uc-accent); color: #fff; font-weight: 600; }
+        .ucPage .ucSeg input:focus-visible + span { outline: 2px solid var(--uc-accent); outline-offset: 2px; }
+        .ucPage .ucSegInline { display: inline-flex; }
+        .ucPage .ucSegInline label { flex: none; }
+        .ucPage .ucCheck { display: flex; gap: .6em; align-items: flex-start; cursor: pointer; line-height: 1.45; }
+        .ucPage .ucCheck input { margin-top: .25em; accent-color: var(--uc-accent); width: 1.1em; height: 1.1em; flex: none; }
+
+        /* chips (users) */
+        .ucPage .ucChips { display: flex; flex-wrap: wrap; gap: .5em; }
+        .ucPage .ucChip { font: inherit; font-size: .92em; min-height: 2.3em; display: inline-flex; align-items: center; gap: .5em; padding: .2em .85em;
+            border-radius: 999px; cursor: pointer; background: transparent; color: var(--uc-muted); border: 1px solid var(--uc-line); }
+        .ucPage .ucChip[aria-pressed="true"] { background: var(--uc-accent-soft); color: var(--uc-text); border-color: var(--uc-accent); }
+        .ucPage .ucChip.ucAll[aria-pressed="true"] { font-weight: 600; }
+        .ucPage .ucChip.ucImplied { background: var(--uc-soft); color: var(--uc-text); border-color: var(--uc-line); }
+        .ucPage .ucAvatar { width: 1.5em; height: 1.5em; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+            font-size: .75em; font-weight: 700; color: #fff; background: var(--uc-accent); flex: none; overflow: hidden; }
+        .ucPage .ucAvatar img { width: 100%; height: 100%; object-fit: cover; }
+
+        /* lists (home rows, collections, history) */
+        .ucPage .ucList { border: 1px solid var(--uc-line); border-radius: .75em; overflow: hidden; background: var(--uc-soft); }
+        .ucPage .ucRow { display: flex; align-items: center; gap: .8em; padding: .6em .9em; border-top: 1px solid var(--uc-line); min-width: 0; }
+        .ucPage .ucRow:first-child { border-top: 0; }
+        .ucPage .ucRowMain { display: flex; flex-direction: column; gap: .15em; flex: 1; min-width: 0; }
+        .ucPage .ucEllipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ucPage .ucHistory { display: flex; flex-direction: column; gap: .35em; }
+        .ucPage details.ucHist { border-radius: .6em; background: var(--uc-soft); }
+        .ucPage details.ucHist > summary { list-style: none; display: flex; align-items: center; gap: 1em; padding: .7em .9em; cursor: pointer; }
+        .ucPage details.ucHist > summary::-webkit-details-marker { display: none; }
+        .ucPage .ucHistWhen { width: 7.8em; flex: none; color: var(--uc-muted); font-size: .9em; white-space: nowrap; }
+        .ucPage .ucHistHow { width: 4.6em; flex: none; font-size: .85em; color: var(--uc-muted); white-space: nowrap; }
+        .ucPage .ucHistWhat { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ucPage .ucHistTag { width: 5.4em; text-align: center; flex: none; }
+        .ucPage .ucHistDetail { padding: 0 .9em .8em 1em; display: flex; flex-direction: column; gap: .25em; font-size: .88em; }
+
+        /* images */
+        .ucPage .ucPosterGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8em; }
+        .ucPage .ucTile { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: .35em; min-width: 0; }
+        .ucPage .ucTileFrame { position: relative; aspect-ratio: 2 / 3; border-radius: .45em; overflow: hidden; background: rgba(0, 0, 0, .25); border: 2px solid transparent; }
+        .ucPage .ucTile[aria-pressed="true"] .ucTileFrame { border-color: var(--uc-accent); }
+        .ucPage .ucTileFrame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .ucPage .ucTileTag { position: absolute; top: .4em; right: .4em; font-size: .7em; font-weight: 600; padding: .15em .55em; border-radius: 999px; background: rgba(0, 0, 0, .7); color: #fff; }
+        .ucPage .ucTileTag.ucCustomTag { background: var(--uc-accent); }
+        .ucPage .ucTileEmpty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: .5em; font-size: .8em; color: var(--uc-muted); }
+        .ucPage .ucTileName { font-size: .85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ucPage .ucSlots { display: flex; flex-wrap: wrap; gap: 1.2em; align-items: flex-start; }
+        .ucPage .ucSlot { display: flex; flex-direction: column; gap: .45em; }
+        .ucPage .ucSlotPoster { width: 9.5em; }
+        .ucPage .ucSlotBackdrop { width: 17em; max-width: 100%; }
+        .ucPage .ucFrame { position: relative; width: 100%; border-radius: .4em; overflow: hidden; background: rgba(0, 0, 0, .25); }
+        .ucPage .ucSlotPoster .ucFrame { aspect-ratio: 2 / 3; }
+        .ucPage .ucSlotBackdrop .ucFrame { aspect-ratio: 16 / 9; }
+        .ucPage .ucFrame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .ucPage .ucFrame.ucHasImg { cursor: zoom-in; }
+        .ucPage .ucFrame.ucHasImg:hover img, .ucPage .ucFrame.ucShowAll img { object-fit: contain; }
+        .ucPage .ucBadge { position: absolute; left: .4em; top: .4em; z-index: 1; font-size: .68em; letter-spacing: .06em; text-transform: uppercase; padding: .15em .55em; border-radius: 3px; background: rgba(0, 0, 0, .7); color: #fff; }
+        .ucPage .ucBadge.ucCustomTag { background: var(--uc-accent); }
+        .ucPage .ucEmpty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: .6em; font-size: .85em; color: var(--uc-muted); border: 2px dashed var(--uc-line); border-radius: .4em; }
+        .ucPage .ucBad { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: .6em; font-size: .82em; color: var(--uc-warn); border: 2px solid var(--uc-warn); border-radius: .4em; }
+        .ucPage .ucMeta { font-size: .8em; color: var(--uc-muted); line-height: 1.35; }
+        .ucPage .ucSlotButtons { display: flex; gap: .4em; flex-wrap: wrap; }
+
+        /* clean-up */
+        .ucPage .ucCleanList { margin: 0; padding-left: 1.2em; max-height: 9em; overflow-y: auto; font-size: .88em; }
+        .ucPage .ucDanger { border: 1px solid var(--uc-bad); border-radius: .75em; padding: 1em; }
+        .ucPage .ucDanger > summary { cursor: pointer; font-weight: 600; color: var(--uc-bad); }
+        .ucPage .ucDangerBody { display: flex; flex-direction: column; gap: .8em; margin-top: .8em; }
+        .ucPage .ucDangerBody p, .ucPage .ucDangerBody ul { margin: 0; line-height: 1.5; }
+        .ucPage .ucDeleteBtn { font: inherit; font-weight: 600; background: #c62828; color: #fff; border: 0; border-radius: .4em; min-height: 2.9em; cursor: pointer; }
+        .ucPage .ucDeleteBtn[disabled] { opacity: .45; cursor: default; }
+
+        .ucPage .ucSave { display: flex; flex-wrap: wrap; align-items: center; gap: .6em 1em; }
+        .ucPage .ucSave button { margin: 0; flex: 0 1 16em; }
+        .ucPage .ucDirty { display: inline-flex; align-items: center; gap: .45em; color: var(--uc-warn); font-weight: 600; font-size: .85em; }
+        .ucPage .ucDirty[hidden] { display: none; }
+        .ucPage .ucSaveNote { flex-basis: 100%; }
+    </style>
+
     <div data-role="content">
-        <div class="content-primary">
+        <div class="content-primary ucPage">
             <form class="ultimateCollectionsForm">
-                <h2 class="sectionTitle">Ultimate Collections</h2>
-                <p class="fieldDescription">
-                    Collections from TMDb keywords, release years, public MDBList lists and library titles.
-                    Runs as the scheduled task <b>Ultimate Collections &gt; Sync collections</b> (daily 05:00; "Run now" there).
-                    The log is in the plugin's data folder (<code>logs/</code>) and in the server log.
-                </p>
+                <div class="ucWrap">
 
-                <div class="inputContainer">
-                    <input is="emby-input" type="password" id="ucTmdbToken" label="TMDb read access token (v4):" autocomplete="off" />
-                    <div class="fieldDescription">themoviedb.org &gt; Settings &gt; API &gt; "API Read Access Token" (free).
-                        This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
-                    <div class="ucTokenWarn fieldDescription" style="display: none; color: #e09a2b;">This looks like the
-                        32-character <b>API Key</b>. TMDb refuses it here (HTTP 401 Unauthorized): use the <b>API Read Access
-                        Token</b>, the long one starting with <code>eyJ</code>.</div>
-                </div>
-
-                <div class="checkboxContainer checkboxContainer-withDescription">
-                    <label>
-                        <input is="emby-checkbox" type="checkbox" id="ucDryRun" />
-                        <span>Dry run (log what would change, change nothing)</span>
-                    </label>
-                    <div class="fieldDescription checkboxFieldDescription">Leave on until the log looks right.</div>
-                </div>
-                <div class="checkboxContainer">
-                    <label>
-                        <input is="emby-checkbox" type="checkbox" id="ucShowTitles" />
-                        <span>Log the matching titles</span>
-                    </label>
-                </div>
-                <div class="checkboxContainer">
-                    <label>
-                        <input is="emby-checkbox" type="checkbox" id="ucIgnoreSeason" />
-                        <span>Ignore seasons (dry run only: preview out-of-season collections)</span>
-                    </label>
-                </div>
-                <div class="checkboxContainer checkboxContainer-withDescription">
-                    <label>
-                        <input is="emby-checkbox" type="checkbox" id="ucRefreshNextRun" />
-                        <span>Download all lists again on the next run</span>
-                    </label>
-                    <div class="fieldDescription checkboxFieldDescription">Switches itself off after that run. Downloads every list from TMDb again.</div>
-                </div>
-
-                <div class="inputContainer">
-                    <input is="emby-input" type="text" id="ucOnly" label="Only these collections (comma-separated, empty = all):" />
-                </div>
-
-                <div class="ucStyleRow" style="display: flex; align-items: center; gap: 1em; flex-wrap: wrap; margin-bottom: 1em;">
-                    <button is="emby-button" type="button" id="ucPosterStyle" class="raised"><span>Poster style...</span></button>
-                    <button is="emby-button" type="button" id="ucCustomImages" class="raised"><span>Custom images...</span></button>
-                    <span class="fieldDescription" style="margin: 0;">Poster style: pick a collection's poster colours with a live preview.
-                        Custom images: use your own poster or backdrop instead of the generated one.</span>
-                </div>
-
-                <div class="inputContainer">
-                    <textarea is="emby-textarea" id="ucCollectionsText" label="Collections (collections.conf format):" rows="30"
-                              style="font-family: monospace; white-space: pre; overflow-wrap: normal; overflow-x: auto;"></textarea>
-                    <div class="fieldDescription">
-                        <code>[global]</code> then one <code>[collection NAME]</code> section per collection; keys
-                        <code>tmdb_keyword</code>, <code>tmdb_actor</code> (movies only), <code>mdblist</code>, <code>title</code>, <code>release_years</code>,
-                        <code>min_rating</code>, <code>min_votes</code>, <code>exclude_genre</code>, <code>exclude_keyword</code>,
-                        <code>tv yes</code>, <code>season MM-DD MM-DD</code>, <code>min_items</code>, <code>max_pages</code>,
-                        <code>home_screen yes|no|spotlight</code>.
-                        The README has the full guide with explained examples.
-                    </div>
-                </div>
-
-                <!-- Home screen rows (Core/HomeRows.cs). Off by default; the options show once it is ticked. Switching
-                     it off opens a confirm box (configPage.js) that removes our rows through HomeRowsApi. -->
-                <div class="ucHomeRows" style="margin: 2.5em 0 2em; padding-top: 1.5em; border-top: 1px solid rgba(128,128,128,.3);">
-                    <h2 class="sectionTitle">Home screen rows</h2>
-                    <p class="fieldDescription">
-                        Shows collections as rows on your users' home screens (Emby 4.10 or newer). Seasonal rows appear when
-                        their season starts and hide when it ends, in the spot each user gave them. Rows change when the sync
-                        task runs.
-                    </p>
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label>
-                            <input is="emby-checkbox" type="checkbox" id="ucManageHomeRows" />
-                            <span>Manage home screen rows</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">Off by default. Using another plugin for home
-                            screens (for example Home Screen Companion)? Let only one of them manage collection rows, or users
-                            may see a row twice.</div>
+                    <div class="ucHead">
+                        <div>
+                            <h2 class="sectionTitle">Ultimate Collections</h2>
+                            <div class="ucMuted" style="max-width: 32em; line-height: 1.5;">Collections from TMDb keywords, release years, MDBList lists and
+                                your own titles, with their own posters. Seasonal ones come and go by themselves.</div>
+                        </div>
+                        <div class="ucHealth"><span class="ucDot ucHealthDot"></span><span class="ucHealthText">Loading...</span></div>
                     </div>
 
-                    <div class="ucHomeOptions" style="margin-left: 2.2em;">
-                        <h3 style="margin: 1.2em 0 .6em; font-weight: 500;">Which users</h3>
-                        <label class="radio-label-block"><input type="radio" is="emby-radio" name="ucHomeUsers" value="all" id="ucHomeUsersAll" /><span>All users, including users added later</span></label>
-                        <label class="radio-label-block"><input type="radio" is="emby-radio" name="ucHomeUsers" value="chosen" id="ucHomeUsersChosen" /><span>Only these users</span></label>
-                        <div class="ucUserPick" style="margin: .4em 0 1em 2.2em;">
-                            <div style="display: flex; gap: 1.5em; margin-bottom: .4em;">
-                                <button is="emby-button" type="button" class="ucUsersAll" style="margin: 0; padding: .2em 0;"><span>Select all</span></button>
-                                <button is="emby-button" type="button" class="ucUsersNone" style="margin: 0; padding: .2em 0;"><span>Select none</span></button>
-                            </div>
-                            <div class="ucUserList">Loading users...</div>
-                            <div class="fieldDescription">New users are not added automatically in this mode.</div>
+                    <div class="ucCards"></div>
+
+                    <div class="ucBox">
+                        <div class="ucTabs" role="tablist">
+                            <button type="button" class="ucTab" role="tab" data-tab="settings">Settings</button>
+                            <button type="button" class="ucTab" role="tab" data-tab="images">Images</button>
+                            <button type="button" class="ucTab" role="tab" data-tab="home">Home Screen</button>
+                            <button type="button" class="ucTab" role="tab" data-tab="cleanup">Clean-up</button>
+                            <button type="button" class="ucTab" role="tab" data-tab="history">History</button>
                         </div>
 
-                        <div style="display: flex; flex-wrap: wrap; gap: 0 2em; margin-top: 1em;">
-                            <div class="selectContainer" style="flex: 1 1 18em;">
-                                <select is="emby-select" id="ucHomeRowStyle" label="Default style">
-                                    <option value="cards">Cards (a row of posters)</option>
-                                    <option value="spotlight">Spotlight (big banner)</option>
-                                </select>
-                                <div class="fieldDescription">A collection can change it with <code>home_screen spotlight</code>. Only one spotlight shows at a time.</div>
+                        <!-- ==== Settings ==== -->
+                        <div class="ucPanel" role="tabpanel" data-panel="settings">
+                            <div class="ucPanelHead">
+                                <div>
+                                    <h3>Settings</h3>
+                                    <p>Runs as the scheduled task Ultimate Collections › Sync collections (<span class="ucSchedule">daily</span>). The log is in the
+                                        plugin's data folder (<code>logs/</code>) and in the server log.</p>
+                                </div>
+                                <button type="button" class="ucBtn ucRunNow" style="flex: none;">Run now</button>
                             </div>
-                            <div class="selectContainer" style="flex: 1 1 18em;">
-                                <select is="emby-select" id="ucHomeRowPosition" label="Where new rows go">
-                                    <option value="after">After Continue Watching / Next Up</option>
-                                    <option value="top">At the top</option>
-                                    <option value="bottom">At the bottom</option>
-                                </select>
-                                <div class="fieldDescription">Only when a row is first added. If a user moves it, it stays where they put it.</div>
+
+                            <div class="ucBlock">
+                                <div class="ucTokenSaved" style="display: flex; align-items: center; justify-content: space-between; gap: 1em;">
+                                    <div style="display: flex; align-items: center; gap: .8em; min-width: 0;">
+                                        <span class="ucLabel">TMDb</span>
+                                        <span class="ucOk"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>Token saved</span>
+                                    </div>
+                                    <button type="button" class="ucLinkBtn ucTokenChange">Change</button>
+                                </div>
+                                <div class="ucTokenEdit" style="display: flex; flex-direction: column; gap: .5em;">
+                                    <span class="ucLabel">TMDb</span>
+                                    <label style="display: flex; flex-direction: column; gap: .4em;"><span class="ucSmall">Read access token (v4)</span>
+                                        <input type="password" id="ucTmdbToken" class="ucField" autocomplete="off" spellcheck="false"></label>
+                                    <span class="ucMuted ucSmall">themoviedb.org › Settings › API › “API Read Access Token” (free).
+                                        This product uses the TMDB API but is not endorsed or certified by TMDB.</span>
+                                    <span class="ucNote ucTokenWarn" hidden>This looks like the 32-character <b>API Key</b>. TMDb refuses it here
+                                        (HTTP 401 Unauthorized): use the <b>API Read Access Token</b>, the long one starting with <code>eyJ</code>.</span>
+                                    <span class="ucNote ucTokenRefused" hidden>TMDb refused this token on the last run (HTTP 401 Unauthorized). Use the
+                                        <b>API Read Access Token</b>, the long one starting with <code>eyJ</code>.</span>
+                                </div>
+                            </div>
+
+                            <div class="ucBlock">
+                                <div class="ucLabelRow">
+                                    <span class="ucLabel">Configuration text</span>
+                                    <span class="ucMuted ucSmall ucConfCount"></span>
+                                </div>
+                                <textarea id="ucCollectionsText" class="ucCode" rows="30" spellcheck="false" aria-label="Configuration text"></textarea>
+                                <details class="ucSmall">
+                                    <summary class="ucMuted" style="cursor: pointer;">Keys you can use</summary>
+                                    <div class="ucKeys"><code>tmdb_keyword</code><code>tmdb_actor</code><code>mdblist</code><code>title</code><code>release_years</code>
+                                        <code>min_rating</code><code>min_votes</code><code>exclude_genre</code><code>exclude_keyword</code><code>tv yes</code>
+                                        <code>season MM-DD MM-DD</code><code>min_items</code><code>max_pages</code><code>home_screen yes|no|spotlight</code>
+                                        <code>poster_title</code><code>poster_accent</code><code>poster_tint</code><code>poster_sepia</code></div>
+                                    <div class="ucMuted" style="margin-top: .5em;"><code>[global]</code> first, then one <code>[collection NAME]</code> section per
+                                        collection. The README has the full guide with explained examples.</div>
+                                </details>
+                            </div>
+
+                            <div class="ucBlock">
+                                <span class="ucLabel">Runs</span>
+                                <div class="ucLines">
+                                    <label class="ucLine"><span><span>Dry run</span><br><span class="ucMuted ucSmall">Log what would change, change nothing</span></span>
+                                        <span class="ucSwitch"><input type="checkbox" id="ucDryRun"><span class="ucTrack"></span></span></label>
+                                    <label class="ucLine ucIgnoreLine"><span><span>Ignore seasons</span><br><span class="ucMuted ucSmall ucIgnoreHint"></span></span>
+                                        <span class="ucSwitch"><input type="checkbox" id="ucIgnoreSeason"><span class="ucTrack"></span></span></label>
+                                    <label class="ucLine"><span><span>Download all lists again next run</span><br><span class="ucMuted ucSmall">Switches itself off after that run</span></span>
+                                        <span class="ucSwitch"><input type="checkbox" id="ucRefreshNextRun"><span class="ucTrack"></span></span></label>
+                                    <label class="ucLine"><span><span>Debug - Log Matching Titles</span><br><span class="ucMuted ucSmall">Lists every title each collection matched. Helps in troubleshooting</span></span>
+                                        <span class="ucSwitch"><input type="checkbox" id="ucShowTitles"><span class="ucTrack"></span></span></label>
+                                </div>
+                            </div>
+
+                            <div class="ucBlock">
+                                <span class="ucLabel">Only these collections</span>
+                                <input type="text" id="ucOnly" class="ucField" placeholder="Empty = all collections" aria-label="Only these collections" autocomplete="off">
+                                <span class="ucMuted ucSmall">Comma-separated names, for testing one collection at a time.</span>
                             </div>
                         </div>
 
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label>
-                                <input is="emby-checkbox" type="checkbox" id="ucHomeRowSpotlightTop" />
-                                <span>Move a seasonal spotlight to the top when its season starts</span>
-                            </label>
-                            <div class="fieldDescription checkboxFieldDescription">The web app shows the first row as a full-screen
-                                banner (TV apps show a banner row). Users can move it down again; it moves up once per season and
-                                to the bottom when the season ends.</div>
-                        </div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label>
-                                <input is="emby-checkbox" type="checkbox" id="ucHomeRowSeasonal" />
-                                <span>Seasonal collections get a row automatically</span>
-                            </label>
-                            <div class="fieldDescription checkboxFieldDescription">Other collections get one only with
-                                <code>home_screen yes</code>; <code>home_screen no</code> keeps a seasonal one off the home screen.</div>
+                        <!-- ==== Images ==== -->
+                        <div class="ucPanel" role="tabpanel" data-panel="images" hidden>
+                            <div class="ucPanelHead">
+                                <div>
+                                    <h3>Posters and backdrops</h3>
+                                    <p>The plugin draws a poster and backdrop for each collection. Change its colours, or use your own picture instead.</p>
+                                </div>
+                            </div>
+                            <div class="ucBlock">
+                                <div class="ucLabelRow">
+                                    <span class="ucLabel">Every collection</span>
+                                    <span class="ucMuted ucSmall">Click one to change it</span>
+                                </div>
+                                <div class="ucPosterGrid"></div>
+                                <div class="ucMuted ucSmall ucGridMore"></div>
+                            </div>
+                            <div class="ucBlock ucSelected" hidden></div>
+                            <span class="ucMuted ucSmall">From the configuration text on this page, saved or not. Overrides are saved at once and reach the
+                                collections on the next run. JPEG or PNG, up to 10 MB; best at 1000x1500 for posters and 1920x1080 for backdrops.</span>
                         </div>
 
-                        <h3 style="margin: 1.2em 0 .4em; font-weight: 500;">Rows right now</h3>
-                        <div class="fieldDescription" style="margin-bottom: .6em;">From the saved settings. Updates after Save and on each run.</div>
-                        <div class="ucHomeTable" style="overflow-x: auto;"></div>
-                        <div class="ucHomeNotes"></div>
-                        <div class="fieldDescription" style="margin-top: .6em;">Hidden rows stay on each home screen while empty (Emby
-                            doesn't show empty rows) and come back in the same spot next season. A user who removes a row doesn't
-                            get it back.</div>
+                        <!-- ==== Home Screen (Core/HomeRows.cs) ==== -->
+                        <div class="ucPanel" role="tabpanel" data-panel="home" hidden>
+                            <div class="ucPanelHead">
+                                <div>
+                                    <h3>Home Screen</h3>
+                                    <p>Shows collections as rows on your users' home screens (Emby 4.10 or newer). Seasonal rows appear when their season
+                                        starts and hide when it ends, in the spot each user gave them. Rows change when the sync runs.</p>
+                                </div>
+                                <label class="ucSwitch"><input type="checkbox" id="ucManageHomeRows"><span class="ucTrack"></span><span class="ucSwitchText">Manage Home Screen</span></label>
+                            </div>
+                            <div class="ucMuted ucHomeOffNote">Off. Using another plugin for home screens (for example Home Screen Companion)? Let only one of them
+                                manage collection rows, or users may see a row twice.</div>
+                            <div class="ucHomeOptions" style="display: flex; flex-direction: column; gap: 1.2em;">
+                                <div class="ucBlocks">
+                                    <div class="ucBlock ucSpan">
+                                        <span class="ucLabel">Who</span>
+                                        <div class="ucChips ucUsers"><span class="ucMuted">Loading users...</span></div>
+                                        <span class="ucMuted ucSmall ucUsersNote"></span>
+                                    </div>
+                                    <div class="ucBlock ucSpan">
+                                        <span class="ucLabel">Style</span>
+                                        <div class="ucSeg">
+                                            <label><input type="radio" name="ucHomeStyle" value="cards"><span>Cards</span></label>
+                                            <label><input type="radio" name="ucHomeStyle" value="spotlight"><span>Spotlight</span></label>
+                                        </div>
+                                        <span class="ucMuted ucSmall">Per collection: <code>home_screen spotlight</code>. Only one spotlight shows at a time.</span>
+                                    </div>
+                                    <div class="ucBlock ucSpan">
+                                        <span class="ucLabel">New rows go</span>
+                                        <div class="ucSeg">
+                                            <label><input type="radio" name="ucHomePosition" value="after"><span>After Continue</span></label>
+                                            <label><input type="radio" name="ucHomePosition" value="top"><span>Top</span></label>
+                                            <label><input type="radio" name="ucHomePosition" value="bottom"><span>Bottom</span></label>
+                                        </div>
+                                        <span class="ucMuted ucSmall">Only when a row is first added. A row a user moves stays where they put it.</span>
+                                    </div>
+                                    <div class="ucBlock ucSpan">
+                                        <span class="ucLabel">Seasons</span>
+                                        <label class="ucCheck"><input type="checkbox" id="ucHomeRowSeasonal"><span>Seasonal collections get a row automatically
+                                            <span class="ucMuted ucSmall">(others need <code>home_screen yes</code>; <code>home_screen no</code> keeps one off)</span></span></label>
+                                        <label class="ucCheck"><input type="checkbox" id="ucHomeRowSpotlightTop"><span>Move a seasonal spotlight to the top when its season starts
+                                            <span class="ucMuted ucSmall">(the web app shows the first row as a full-screen banner; it moves to the bottom when the season ends)</span></span></label>
+                                    </div>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: .6em;">
+                                    <div class="ucLabelRow">
+                                        <span class="ucLabel">Rows right now</span>
+                                        <span class="ucMuted ucSmall">From the saved settings; updates after Save and on each run</span>
+                                    </div>
+                                    <div class="ucHomeTable"></div>
+                                    <div class="ucHomeNotes" style="display: flex; flex-direction: column; gap: .4em;"></div>
+                                    <span class="ucMuted ucSmall">Waiting rows stay hidden on each home screen and come back in the same spot next season. A user who
+                                        removes a row doesn't get it back.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ==== Clean-up: buttons act at once, outside Save ==== -->
+                        <div class="ucPanel" role="tabpanel" data-panel="cleanup" hidden>
+                            <div class="ucPanelHead">
+                                <div>
+                                    <h3>Clean-up</h3>
+                                    <p>Leftovers worth clearing out now and then. Each one is counted when the tab opens.</p>
+                                </div>
+                            </div>
+                            <div class="ucBlocks">
+                                <div class="ucBlock">
+                                    <span class="ucLabel">Unused images</span>
+                                    <div class="ucUnusedCount">Counting...</div>
+                                    <ul class="ucCleanList ucUnusedList"></ul>
+                                    <span class="ucMuted ucSmall">Override pictures that no collection in the configuration text uses any more.</span>
+                                    <button type="button" class="ucBtn ucDelUnused" disabled>Delete unused images</button>
+                                </div>
+                                <div class="ucBlock">
+                                    <span class="ucLabel">Orphaned rows</span>
+                                    <div class="ucOrphanCount">Counting...</div>
+                                    <ul class="ucCleanList ucOrphanList"></ul>
+                                    <span class="ucMuted ucSmall">Collection rows on any user's home screen whose collection no longer exists. Emby hides them,
+                                        but an empty first row stops the next one from showing as a full-screen spotlight.</span>
+                                    <button type="button" class="ucBtn ucClearOrphans" disabled>Clear orphaned rows</button>
+                                </div>
+                            </div>
+                            <details class="ucDanger">
+                                <summary>Danger zone: delete all collections</summary>
+                                <div class="ucDangerBody">
+                                    <p>This deletes <b>every collection in Emby</b>, not only the ones this plugin made: collections you created by hand,
+                                        ones Emby created automatically, and ones from other tools or plugins.</p>
+                                    <ul class="ucMuted" style="padding-left: 1.2em;">
+                                        <li>Your movies, shows and files are <b>not</b> touched. Only the collections are removed.</li>
+                                        <li>It <b>cannot be undone</b>. A list of every deleted collection and its titles is saved first, under <code>backups/</code>.</li>
+                                        <li>Emby's automatic box sets come back on the next library scan unless that is switched off in each movie library's settings.</li>
+                                        <li>The plugin's own collections are built again on its next run.</li>
+                                    </ul>
+                                    <b class="ucCollectionCount">Counting collections...</b>
+                                    <label style="display: flex; flex-direction: column; gap: .4em;"><span class="ucSmall">Type DELETE (in capitals) to unlock the button</span>
+                                        <input type="text" id="ucDeleteConfirm" class="ucField" autocomplete="off"></label>
+                                    <button type="button" class="ucDeleteBtn ucDeleteAll" disabled>Delete All Collections</button>
+                                    <span class="ucDeleteResult"></span>
+                                </div>
+                            </details>
+                        </div>
+
+                        <!-- ==== History (Core/RunHistory.cs) ==== -->
+                        <div class="ucPanel" role="tabpanel" data-panel="history" hidden>
+                            <div class="ucPanelHead" style="align-items: flex-end;">
+                                <div>
+                                    <h3>Run history</h3>
+                                    <p>Every run, quiet nights included. Click a run to see what it changed.</p>
+                                </div>
+                                <div class="ucSeg ucSegInline" role="group" aria-label="Filter">
+                                    <label><input type="radio" name="ucHistFilter" value="all" checked><span>All runs</span></label>
+                                    <label><input type="radio" name="ucHistFilter" value="changes"><span>Changes only</span></label>
+                                </div>
+                            </div>
+                            <div class="ucHistory"></div>
+                            <span class="ucMuted ucSmall">Keeps the last 200 runs. The full detail of each run is in that day's log.</span>
+                        </div>
                     </div>
 
-                    <!-- Shown whether or not the plugin manages rows: orphans are most often left by switching it off with
-                         "Leave them", or by a collection deleted while someone had a row for it. -->
-                    <h3 style="margin: 1.6em 0 .4em; font-weight: 500;">Orphaned rows</h3>
-                    <div class="fieldDescription" style="margin-bottom: .6em;">Collection rows on any user's home screen whose
-                        collection no longer exists. Emby hides them, but they stay in each user's home screen settings, and an
-                        empty first row stops the next one from showing as a full-screen spotlight. While the plugin manages
-                        rows, its own rows waiting for next season are not counted.</div>
-                    <p class="ucOrphanCount" style="margin: .4em 0;">Counting orphaned rows...</p>
-                    <ul class="ucOrphanList" style="margin: .2em 0 .8em; max-height: 9em; overflow-y: auto; font-size: .9em;"></ul>
-                    <button is="emby-button" type="button" id="ucClearOrphans" class="raised" disabled><span>Clear orphaned rows</span></button>
+                    <div class="ucSave">
+                        <button is="emby-button" type="submit" class="raised button-submit"><span>Save</span></button>
+                        <span class="ucDirty" hidden><span class="ucDot ucWarnDot"></span>Unsaved changes</span>
+                        <span class="ucMuted ucSmall ucSaveNote">Save covers the Settings and Home Screen tabs. Buttons on Images and Clean-up act right away.</span>
+                    </div>
                 </div>
-
-                <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
             </form>
-
-            <div class="ucDangerZone" style="margin-top: 4em; padding: 1.2em 1.5em; border: 2px solid #c62828; border-radius: 6px;">
-                <h2 class="sectionTitle" style="color: #ef5350; margin-top: 0;">Danger zone: delete all collections</h2>
-                <p>
-                    This deletes <b>every collection in Emby</b>, not only the ones this plugin made: collections you
-                    created by hand, ones Emby created automatically, and ones from other tools or plugins.
-                    Use it to clear out a library whose collections have grown out of hand before letting this plugin build them again.
-                </p>
-                <ul>
-                    <li>Your movies, shows and files are <b>not</b> touched. Only the collections are removed: their names,
-                        posters and which titles were in them.</li>
-                    <li>It <b>cannot be undone</b>. A list of every deleted collection and its titles is saved first, in the
-                        plugin's data folder under <code>backups/</code>.</li>
-                    <li>Collections Emby makes automatically from movie metadata (TMDb "box sets") come back on the next library
-                        scan unless that is switched off in each movie library's settings.</li>
-                    <li>The plugin's own collections are created again on its next run.</li>
-                </ul>
-                <p class="ucCollectionCount" style="font-weight: bold;">Counting collections...</p>
-                <div class="inputContainer">
-                    <input is="emby-input" type="text" id="ucDeleteConfirm" autocomplete="off"
-                           label="Type DELETE (in capitals) to unlock the button:" />
-                </div>
-                <button is="emby-button" type="button" id="ucDeleteAll" class="raised block" disabled
-                        style="background: #c62828; color: #fff;"><span>Delete All Collections</span></button>
-                <p class="ucDeleteResult" style="margin-bottom: 0;"></p>
-            </div>
         </div>
     </div>
 </div>
